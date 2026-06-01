@@ -1,0 +1,11 @@
+node_modules/
+build/
+backend/dist/
+backend/__pycache__/
+*.pyc
+__pycache__/
+.env
+config.local.json
+*.log
+.DS_Store
+Thumbs.db

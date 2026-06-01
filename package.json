@@ -1,0 +1,47 @@
+{
+  "name": "yizhun-wechat-bot",
+  "version": "1.0.0",
+  "description": "壹准 AI 营销助手 - 微信群发 + 图片美化 + AI 文案",
+  "main": "frontend/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "backend": "python backend/app.py"
+  },
+  "author": "壹准",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.0"
+  },
+  "build": {
+    "appId": "com.yizhun.wechat-bot",
+    "productName": "壹准AI营销助手",
+    "directories": {
+      "output": "build"
+    },
+    "files": [
+      "frontend/**/*",
+      "backend/dist/**/*",
+      "!node_modules"
+    ],
+    "extraResources": [
+      {
+        "from": "backend/dist/",
+        "to": "backend/"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "frontend/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "installerIcon": "frontend/icon.ico",
+      "installerHeaderIcon": "frontend/icon.ico"
+    }
+  }
+}

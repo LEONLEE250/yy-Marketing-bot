@@ -1,0 +1,29 @@
+{
+  "ai": {
+    "enabled": false,
+    "api_url": "https://api.openai.com/v1",
+    "api_key": "",
+    "model": "gpt-4o-mini",
+    "tested": false
+  },
+  "fallback": {
+    "use_scripts": true,
+    "allow_manual": true
+  },
+  "watermark": {
+    "text": "壹准 · 生生广场4栋11号楼",
+    "position": "bottom-right",
+    "adaptive_color": true
+  },
+  "broadcast": {
+    "interval": 0.8,
+    "exclude": [
+      "微信团队",
+      "文件传输助手"
+    ]
+  },
+  "app": {
+    "version": "1.0.0",
+    "update_channel": "github"
+  }
+}

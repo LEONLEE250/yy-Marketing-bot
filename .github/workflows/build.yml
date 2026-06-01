@@ -1,0 +1,61 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.0.1)'
+        required: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pyinstaller
+
+      - name: Build backend with PyInstaller
+        run: |
+          pyinstaller --onefile --name backend --distpath backend/dist backend/app.py
+
+      - name: Install Node dependencies
+        run: npm install
+
+      - name: Build Electron app
+        run: npx electron-builder --win --publish never
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/*.exe
+          body: |
+            ## 更新内容
+
+            本次更新通过 WorkBuddy 对话自动构建。
+
+            ### 使用方式
+            1. 下载 `.exe` 安装包
+            2. 双击安装
+            3. 打开微信电脑版
+            4. 启动「壹准 AI 营销助手」
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
