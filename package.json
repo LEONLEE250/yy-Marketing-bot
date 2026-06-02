@@ -1,6 +1,6 @@
 {
   "name": "yizhun-wechat-bot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "壹准 AI 营销助手 - 微信群发 + 图片美化 + AI 文案",
   "main": "frontend/main.js",
   "scripts": {
@@ -29,11 +29,16 @@
       {
         "from": "backend/dist/",
         "to": "backend/"
+      },
+      {
+        "from": "../wechat-wxauto/",
+        "to": "wechat-wxauto/"
       }
     ],
     "win": {
       "target": "nsis",
-      "icon": "frontend/icon.ico"
+      "icon": "frontend/icon.ico",
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,

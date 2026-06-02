@@ -12,8 +12,16 @@ import base64
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 
-# 确保能导入现有模块
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'wechat-wxauto'))
+# 确保能导入现有模块（开发 + PyInstaller 打包均兼容）
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# 开发模式：wechat-wxauto 在项目父级
+_DEV_WXAUTO = os.path.join(_BASE_DIR, '..', '..', 'wechat-wxauto')
+# 打包模式：backend.exe 在 resources/backend/，wechat-wxauto 在 resources/wechat-wxauto/
+_EXE_DIR = os.path.dirname(os.path.abspath(sys.executable))
+_PKG_WXAUTO = os.path.join(_EXE_DIR, '..', 'wechat-wxauto')
+for _p in [_DEV_WXAUTO, _PKG_WXAUTO]:
+    if os.path.isdir(_p) and _p not in sys.path:
+        sys.path.insert(0, _p)
 
 app = Flask(__name__)
 CORS(app)
@@ -28,8 +36,13 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
 SCRIPTS_FILE = os.path.join(CONFIG_DIR, 'scripts.json')
 UPLOAD_DIR = os.path.join(CONFIG_DIR, 'uploads')
 OUTPUT_DIR = os.path.join(CONFIG_DIR, 'output')
+# wechat-wxauto 的 output 目录（取第一个存在的）
+_WXAUTO_DIR = _DEV_WXAUTO if os.path.isdir(_DEV_WXAUTO) else (_PKG_WXAUTO if os.path.isdir(_PKG_WXAUTO) else None)
+_WXAUTO_OUTPUT = os.path.join(_WXAUTO_DIR, 'output') if _WXAUTO_DIR else OUTPUT_DIR
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+if os.path.isdir(_WXAUTO_DIR):
+    os.makedirs(_WXAUTO_OUTPUT, exist_ok=True)
 
 DEFAULT_CONFIG = {
     "ai": {
@@ -53,7 +66,7 @@ DEFAULT_CONFIG = {
         "exclude": ["微信团队", "文件传输助手"]
     },
     "app": {
-        "version": "1.0.0",
+        "version": "1.0.1",
         "update_channel": "github"
     }
 }
@@ -238,7 +251,8 @@ def api_process_image():
     saturation = data.get('saturation', 1.2)
 
     try:
-        from image_enhancer import process_image
+        from image_enhancer import process_image, enhance_image, apply_watermark, render_text_card
+
         output_name = f"processed_{int(time.time())}.png"
         result = process_image(
             image_path, output_name,
@@ -247,6 +261,14 @@ def api_process_image():
             enhance=enhance,
             position=position
         )
+        # 把输出复制到 OUTPUT_DIR 以便 /api/image/output/ 访问
+        if result.get("success") and result.get("output"):
+            src = result["output"]
+            dst = os.path.join(OUTPUT_DIR, output_name)
+            if os.path.exists(src) and src != dst:
+                import shutil
+                shutil.copy2(src, dst)
+                result["output"] = dst
         return jsonify(result)
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
@@ -254,13 +276,17 @@ def api_process_image():
 
 @app.route('/api/image/output/<filename>', methods=['GET'])
 def api_get_image(filename):
+    # 优先查找 OUTPUT_DIR
     filepath = os.path.join(OUTPUT_DIR, filename)
     if os.path.exists(filepath):
         return send_file(filepath, mimetype='image/png')
-    # also check wechat-wxauto output
-    alt_path = os.path.join(os.path.dirname(__file__), '..', '..', 'wechat-wxauto', 'output', filename)
-    if os.path.exists(alt_path):
-        return send_file(alt_path, mimetype='image/png')
+    # 也检查 wechat-wxauto output
+    for d in [os.path.join(_WXAUTO_DIR, 'output') if os.path.isdir(_WXAUTO_DIR) else '',
+              os.path.join(_DEV_WXAUTO, 'output') if os.path.isdir(_DEV_WXAUTO) else '']:
+        if d:
+            alt = os.path.join(d, filename)
+            if os.path.exists(alt):
+                return send_file(alt, mimetype='image/png')
     return jsonify({"success": False, "error": "File not found"}), 404
 
 
@@ -463,7 +489,7 @@ def api_check_update():
 
     try:
         import urllib.request
-        url = "https://api.github.com/repos/edydx/yizhun-wechat-bot/releases/latest"
+        url = "https://api.github.com/repos/LEONLEE250/yizhun-wechat-bot/releases/latest"
         req = urllib.request.Request(url, headers={"User-Agent": "YizhunApp/1.0"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             release = json.loads(resp.read().decode('utf-8'))
@@ -504,7 +530,7 @@ def _compare_versions(v1, v2):
 
 @app.route('/api/health', methods=['GET'])
 def api_health():
-    return jsonify({"status": "ok", "version": "1.0.0"})
+    return jsonify({"status": "ok", "version": "1.0.1"})
 
 
 # ============================================================

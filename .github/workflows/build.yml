@@ -35,7 +35,14 @@ jobs:
 
       - name: Build backend with PyInstaller
         run: |
-          pyinstaller --onefile --name backend --distpath backend/dist backend/app.py
+          pyinstaller --onefile --name backend --distpath backend/dist `
+            --add-data "..\wechat-wxauto\*.py;wechat-wxauto" `
+            --hidden-import flask --hidden-import flask_cors --hidden-import wxauto `
+            --hidden-import PIL --hidden-import requests --hidden-import numpy `
+            --hidden-import image_enhancer --hidden-import ai_copywriter --hidden-import wxauto_service `
+            --hidden-import PIL.Image --hidden-import PIL.ImageDraw --hidden-import PIL.ImageFont `
+            --hidden-import PIL.ImageFilter --hidden-import PIL.ImageEnhance `
+            backend/app.py
 
       - name: Install Node dependencies
         run: npm install
@@ -48,9 +55,13 @@ jobs:
         with:
           files: build/*.exe
           body: |
-            ## 更新内容
+            ## v1.0.1 更新内容
 
-            本次更新通过 WorkBuddy 对话自动构建。
+            - 修复群发中心收件人加载问题
+            - 修复图片工具处理并预览功能
+            - AI 模型改为手动输入，支持任意兼容模型
+            - 修复 PyInstaller 打包路径问题
+            - 清理话术库乱码数据
 
             ### 使用方式
             1. 下载 `.exe` 安装包

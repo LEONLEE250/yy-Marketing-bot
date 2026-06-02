@@ -6,10 +6,20 @@ let mainWindow;
 let backendProcess;
 
 function startBackend() {
-  const backendPath = path.join(__dirname, '..', 'backend', 'app.py');
-  const pythonPath = 'python';
+  const isPackaged = app.isPackaged;
+  let cmd, args;
 
-  backendProcess = spawn(pythonPath, [backendPath], {
+  if (isPackaged) {
+    // 打包后：resources/backend/backend.exe
+    cmd = path.join(process.resourcesPath, 'backend', 'backend.exe');
+    args = [];
+  } else {
+    // 开发模式：用 python 启动 app.py
+    cmd = 'python';
+    args = [path.join(__dirname, '..', 'backend', 'app.py')];
+  }
+
+  backendProcess = spawn(cmd, args, {
     stdio: ['pipe', 'pipe', 'pipe'],
     windowsHide: true
   });
