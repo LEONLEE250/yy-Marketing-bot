@@ -489,10 +489,21 @@ def api_check_update():
 
     try:
         import urllib.request
+        import ssl
         url = "https://api.github.com/repos/LEONLEE250/yizhun-wechat-bot/releases/latest"
-        req = urllib.request.Request(url, headers={"User-Agent": "YizhunApp/1.0"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            release = json.loads(resp.read().decode('utf-8'))
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "YizhunApp/1.0",
+            "Accept": "application/vnd.github.v3+json"
+        })
+
+        # 创建不验证 SSL 证书的 context（解决某些 Windows 环境的 SSL 问题）
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+            body = resp.read().decode('utf-8')
+            release = json.loads(body)
             latest_ver = release.get('tag_name', 'v0.0.0').lstrip('v')
             download_url = None
             for asset in release.get('assets', []):
@@ -509,7 +520,12 @@ def api_check_update():
                 "release_notes": release.get('body', '')
             })
     except Exception as e:
-        return jsonify({"success": True, "has_update": False, "error": str(e), "current": current_ver})
+        return jsonify({
+            "success": False,
+            "has_update": False,
+            "error": str(e),
+            "current": current_ver
+        })
 
 
 def _compare_versions(v1, v2):

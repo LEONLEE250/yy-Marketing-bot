@@ -674,6 +674,10 @@ async function checkUpdate() {
   try {
     const res = await fetch(`${API}/api/update/check`);
     const data = await res.json();
+    if (!data.success) {
+      toast('检查更新失败: ' + (data.error || '网络错误'));
+      return;
+    }
     if (data.has_update) {
       showUpdateDialog(data);
     } else {
