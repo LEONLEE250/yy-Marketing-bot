@@ -1,6 +1,6 @@
 {
   "name": "yizhun-wechat-bot",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "壹准AI微信营销助手 - 微信群发 + 图片美化 + AI 文案",
   "main": "frontend/main.js",
   "scripts": {

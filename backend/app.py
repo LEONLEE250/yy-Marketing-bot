@@ -61,7 +61,7 @@ DEFAULT_CONFIG = {
         "exclude": ["微信团队", "文件传输助手"]
     },
     "app": {
-        "version": "1.0.2",
+        "version": "1.0.3",
         "update_channel": "github"
     }
 }
@@ -115,9 +115,13 @@ def api_status():
     try:
         from wxauto_service import check_status
         status = check_status()
-        return jsonify({"success": True, "wx_online": status.get("online", False)})
+        return jsonify({
+            "success": True,
+            "wx_online": status.get("online", False),
+            "info": status.get("info", "未知状态")
+        })
     except Exception as e:
-        return jsonify({"success": True, "wx_online": False, "error": str(e)})
+        return jsonify({"success": True, "wx_online": False, "info": "后端未就绪"})
 
 
 # ============================================================
@@ -244,6 +248,7 @@ def api_process_image():
     brightness = data.get('brightness', 1.1)
     contrast = data.get('contrast', 1.15)
     saturation = data.get('saturation', 1.2)
+    wm_color = data.get('wm_color', 'auto')
 
     try:
         from image_enhancer import process_image, enhance_image, apply_watermark, render_text_card
@@ -257,7 +262,8 @@ def api_process_image():
             position=position,
             brightness=brightness,
             contrast=contrast,
-            saturation=saturation
+            saturation=saturation,
+            wm_color=wm_color
         )
         # 把输出复制到 OUTPUT_DIR 以便 /api/image/output/ 访问
         if result.get("success") and result.get("output"):
@@ -368,8 +374,8 @@ def _call_ai_api(ai_config, context, style):
         payload = json.dumps({
             "model": model,
             "messages": [
-                {"role": "system", "content": f"你是壹准二手手机店的营销文案助手。门店地址：生生广场4栋11号楼整栋。生成{style_guide.get(style, style_guide['朋友圈'])}"},
-                {"role": "user", "content": f"根据以下内容生成一段微信群发营销文案：{context}"}
+                {"role": "system", "content": f"你是壹准二手手机店的营销文案助手。根据用户提供的内容，生成一段适合微信营销的文案。风格要求：{style_guide.get(style, style_guide['朋友圈'])}。不要强行添加地址或门店信息，除非用户明确要求。"},
+                {"role": "user", "content": f"根据以下内容生成营销文案：{context}"}
             ],
             "max_tokens": 300,
             "temperature": 0.8

@@ -1,13 +1,13 @@
 {
   "ai": {
     "enabled": true,
-    "api_url": "https://api.openai.com/v1",
-    "api_key": "",
-    "model": "gpt-4o-mini",
+    "api_url": "https://api.siliconflow.cn/v1",
+    "api_key": "sk-fakebywkmmdonhqcqildrwcmxuxotbuimoecyyhsjzkqpsie",
+    "model": "deepseek-ai/DeepSeek-V3.2",
     "tested": false
   },
   "fallback": {
-    "use_scripts": true,
+    "use_scripts": false,
     "allow_manual": true
   },
   "broadcast": {
@@ -18,7 +18,7 @@
     ]
   },
   "app": {
-    "version": "1.0.2",
+    "version": "1.0.3",
     "update_channel": "github"
   }
 }

@@ -30,8 +30,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupDragDrop();
   await loadConfig();
   await loadScripts();
-  checkWxStatus();
-  setInterval(checkWxStatus, 10000);
+  checkWxStatus();  // 仅启动时检查一次
+  // 不再定时轮询，只在用户操作时检查
 });
 
 // ============================================================
@@ -189,6 +189,7 @@ async function processImage() {
   const textLines = document.getElementById('cardTextLines').value.trim().split('\n').filter(Boolean);
   const watermark = document.getElementById('wmText').value.trim();
   const position = document.getElementById('wmPosition').value;
+  const wmColor = document.getElementById('wmColor')?.value || 'auto';
 
   try {
     const res = await fetch(`${API}/api/image/process`, {
@@ -199,6 +200,7 @@ async function processImage() {
         text_lines: textLines.length ? textLines : null,
         watermark: watermark || null,
         position,
+        wm_color: wmColor,
         enhance: true,
         brightness: parseInt(document.getElementById('brightness').value) / 100,
         contrast: parseInt(document.getElementById('contrast').value) / 100,
@@ -208,6 +210,12 @@ async function processImage() {
     const data = await res.json();
     if (data.success) {
       state.processedImagePath = data.output;
+      // 显示预览
+      const preview = document.getElementById('processedPreview');
+      if (preview && data.output) {
+        preview.src = `${API}/api/image/output/${data.output.split(/[/\\]/).pop()}`;
+        preview.classList.remove('hidden');
+      }
       toast('图片处理完成');
     } else {
       toast('处理失败: ' + data.error);
@@ -221,9 +229,15 @@ async function exportImage() {
   if (!state.processedImagePath) return toast('请先处理图片');
   if (window.electronAPI) {
     const dest = await window.electronAPI.saveFile(state.processedImagePath);
-    if (dest) toast('已导出');
+    if (dest) toast('已导出到: ' + dest);
+    else toast('已取消导出');
   } else {
-    toast('导出功能需 Electron 环境');
+    // 浏览器环境：直接下载
+    const a = document.createElement('a');
+    a.href = `${API}/api/image/output/${state.processedImagePath.split(/[/\\]/).pop()}`;
+    a.download = 'processed_image.png';
+    a.click();
+    toast('已下载');
   }
 }
 
@@ -241,6 +255,7 @@ async function loadSessions() {
     } else {
       toast('获取会话失败: ' + (data.error || '请确保微信已登录并置于前台'));
     }
+    checkWxStatus();  // 刷新连接状态
   } catch (err) {
     toast('连接后端失败: ' + err.message);
   }
@@ -668,10 +683,10 @@ async function checkWxStatus() {
     const text = document.getElementById('statusText');
     if (data.wx_online) {
       dot.classList.remove('off');
-      text.textContent = '微信已连接 · 准备就绪';
+      text.textContent = data.info || '微信已连接';
     } else {
       dot.classList.add('off');
-      text.textContent = '微信未连接 · 请打开微信';
+      text.textContent = data.info || '点击「加载会话」连接微信';
     }
   } catch (err) {
     document.querySelector('.status-dot').classList.add('off');

@@ -81,7 +81,15 @@ function createWindow() {
       defaultPath: 'processed_image.png',
       filters: [{ name: 'PNG', extensions: ['png'] }]
     });
-    return result.canceled ? null : result.filePath;
+    if (result.canceled) return null;
+    // 实际复制文件
+    try {
+      fs.copyFileSync(sourcePath, result.filePath);
+      return result.filePath;
+    } catch (err) {
+      console.error('File copy failed:', err);
+      return null;
+    }
   });
 
   // 打开外部链接

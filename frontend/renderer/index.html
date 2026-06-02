@@ -141,6 +141,16 @@
                 <option value="diagonal">对角线平铺</option>
               </select>
             </div>
+            <div class="setting-row">
+              <span>颜色</span>
+              <select class="select" id="wmColor">
+                <option value="auto">自动适配</option>
+                <option value="white">白色</option>
+                <option value="black">黑色</option>
+                <option value="white-trans">白色半透明</option>
+                <option value="black-trans">黑色半透明</option>
+              </select>
+            </div>
           </div>
           <div class="card">
             <div class="card-label">文案卡片</div>
@@ -149,6 +159,9 @@
           <div class="btn-row">
             <button class="btn btn-primary" onclick="processImage()">处理并预览</button>
             <button class="btn btn-ghost" onclick="exportImage()">导出图片</button>
+          </div>
+          <div style="margin-top:12px">
+            <img id="processedPreview" class="image-preview hidden" style="max-width:100%;border-radius:8px" />
           </div>
         </div>
       </div>
@@ -279,7 +292,7 @@
           <div class="card about-card">
             <div class="about-info">
               <div class="about-name">壹准AI微信营销助手</div>
-              <div class="about-version">v1.0.2 · 2026</div>
+              <div class="about-version">v1.0.3 · 2026</div>
             </div>
             <button class="btn btn-ghost btn-sm" onclick="checkUpdate()">检查更新</button>
           </div>
