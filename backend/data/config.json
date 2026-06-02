@@ -1,6 +1,6 @@
 {
   "ai": {
-    "enabled": false,
+    "enabled": true,
     "api_url": "https://api.openai.com/v1",
     "api_key": "",
     "model": "gpt-4o-mini",
@@ -10,11 +10,6 @@
     "use_scripts": true,
     "allow_manual": true
   },
-  "watermark": {
-    "text": "壹准 · 生生广场4栋11号楼",
-    "position": "bottom-right",
-    "adaptive_color": true
-  },
   "broadcast": {
     "interval": 0.8,
     "exclude": [
@@ -23,7 +18,7 @@
     ]
   },
   "app": {
-    "version": "1.0.0",
+    "version": "1.0.2",
     "update_channel": "github"
   }
 }

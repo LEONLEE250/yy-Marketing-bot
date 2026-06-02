@@ -9,3 +9,5 @@ config.local.json
 *.log
 .DS_Store
 Thumbs.db
+# wechat-wxauto is a local copy for packaging, not committed
+wechat-wxauto/

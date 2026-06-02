@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>壹准 AI 营销助手</title>
+<title>壹准AI微信营销助手</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -17,7 +17,7 @@
         <button class="win-btn win-min" onclick="window.electronAPI.minimize()"></button>
         <button class="win-btn win-max" onclick="window.electronAPI.maximize()"></button>
       </div>
-      <span class="app-title">壹准 AI 营销助手</span>
+      <span class="app-title">壹准AI微信营销助手</span>
       <div class="titlebar-spacer"></div>
     </div>
     <div class="tabs" id="tabs">
@@ -70,6 +70,9 @@
             </div>
             <div id="keywordInput" class="hidden" style="margin-bottom:10px">
               <input class="input" placeholder="输入关键词，逗号分隔" id="keywordField" />
+            </div>
+            <div id="manualInput" style="margin-bottom:10px">
+              <input class="input" placeholder="手动输入收件人名称/微信号，逗号分隔" id="manualField" />
             </div>
             <div class="recipient-list" id="recipientList">
               <div class="empty-state">点击「加载会话」获取微信聊天列表</div>
@@ -229,72 +232,54 @@
                 <span class="setting-label">启用 AI 文案</span>
                 <span class="setting-sub">关闭后使用话术库 + 手动输入</span>
               </div>
-              <label class="toggle-switch"><input type="checkbox" id="aiEnabled" onchange="saveAllSettings()"><span class="toggle-slider"></span></label>
+              <label class="toggle-switch"><input type="checkbox" id="aiEnabled"><span class="toggle-slider"></span></label>
             </div>
             <div class="setting-row">
               <div><span class="setting-label">API 地址</span></div>
-              <input class="input small" value="https://api.openai.com/v1" id="apiUrl" onchange="saveAllSettings()" />
+              <input class="input small" value="https://api.openai.com/v1" id="apiUrl" />
             </div>
             <div class="setting-row">
               <div><span class="setting-label">API Key</span></div>
-              <input class="input small" type="password" placeholder="sk-..." id="apiKey" onchange="saveAllSettings()" />
+              <input class="input small" type="password" placeholder="sk-..." id="apiKey" />
             </div>
             <div class="setting-row">
               <div><span class="setting-label">模型</span></div>
-              <input class="input small" type="text" value="gpt-4o-mini" id="aiModel" onchange="saveAllSettings()" placeholder="输入模型名称，如 gpt-4o-mini" />
+              <input class="input small" type="text" value="gpt-4o-mini" id="aiModel" placeholder="输入模型名称，如 gpt-4o-mini" />
             </div>
             <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
               <span class="api-badge" id="apiTestBadge">未测试</span>
               <button class="btn btn-ghost btn-sm" onclick="testApiConnection()">测试连接</button>
+              <button class="btn btn-primary btn-sm" onclick="saveAllSettings()">保存设置</button>
             </div>
           </div>
           <div class="card">
             <div class="card-label">文案降级策略</div>
             <div class="setting-row">
               <div><span class="setting-label">无 Key 时自动用话术库</span></div>
-              <label class="toggle-switch"><input type="checkbox" id="useScripts" checked onchange="saveAllSettings()"><span class="toggle-slider"></span></label>
+              <label class="toggle-switch"><input type="checkbox" id="useScripts" checked><span class="toggle-slider"></span></label>
             </div>
             <div class="setting-row">
               <div><span class="setting-label">允许手动输入</span></div>
-              <label class="toggle-switch"><input type="checkbox" id="allowManual" checked onchange="saveAllSettings()"><span class="toggle-slider"></span></label>
+              <label class="toggle-switch"><input type="checkbox" id="allowManual" checked><span class="toggle-slider"></span></label>
             </div>
           </div>
         </div>
         <div class="col">
           <div class="card">
-            <div class="card-label">水印预设</div>
-            <div class="setting-row">
-              <div><span class="setting-label">默认水印文字</span></div>
-              <input class="input small" value="壹准 · 生生广场4栋11号楼" id="defaultWM" onchange="saveAllSettings()" />
-            </div>
-            <div class="setting-row">
-              <div><span class="setting-label">默认位置</span></div>
-              <select class="select" id="defaultWMPos" onchange="saveAllSettings()">
-                <option value="bottom-right">右下角</option>
-                <option value="bottom-left">左下角</option>
-                <option value="diagonal">对角线平铺</option>
-              </select>
-            </div>
-            <div class="setting-row">
-              <div><span class="setting-label">自适应颜色</span></div>
-              <label class="toggle-switch"><input type="checkbox" id="adaptiveColor" checked onchange="saveAllSettings()"><span class="toggle-slider"></span></label>
-            </div>
-          </div>
-          <div class="card">
             <div class="card-label">群发安全</div>
             <div class="setting-row">
               <div><span class="setting-label">发送间隔（秒）</span></div>
-              <input class="input small" type="number" step="0.1" min="0.3" max="5" value="0.8" id="sendInterval" onchange="saveAllSettings()" />
+              <input class="input small" type="number" step="0.1" min="0.3" max="5" value="0.8" id="sendInterval" />
             </div>
             <div class="setting-row">
               <div><span class="setting-label">排除名单</span></div>
-              <input class="input small" value="微信团队, 文件传输助手" id="excludeList" onchange="saveAllSettings()" />
+              <input class="input small" value="微信团队, 文件传输助手" id="excludeList" />
             </div>
           </div>
           <div class="card about-card">
             <div class="about-info">
-              <div class="about-name">壹准 AI 营销助手</div>
-              <div class="about-version">v1.0.1 · 2026</div>
+              <div class="about-name">壹准AI微信营销助手</div>
+              <div class="about-version">v1.0.2 · 2026</div>
             </div>
             <button class="btn btn-ghost btn-sm" onclick="checkUpdate()">检查更新</button>
           </div>

@@ -56,17 +56,12 @@ DEFAULT_CONFIG = {
         "use_scripts": True,
         "allow_manual": True
     },
-    "watermark": {
-        "text": "壹准 \u00b7 生生广场4栋11号楼",
-        "position": "bottom-right",
-        "adaptive_color": True
-    },
     "broadcast": {
         "interval": 0.8,
         "exclude": ["微信团队", "文件传输助手"]
     },
     "app": {
-        "version": "1.0.1",
+        "version": "1.0.2",
         "update_channel": "github"
     }
 }
@@ -259,7 +254,10 @@ def api_process_image():
             text_lines=text_lines,
             watermark=watermark,
             enhance=enhance,
-            position=position
+            position=position,
+            brightness=brightness,
+            contrast=contrast,
+            saturation=saturation
         )
         # 把输出复制到 OUTPUT_DIR 以便 /api/image/output/ 访问
         if result.get("success") and result.get("output"):
@@ -471,7 +469,10 @@ def api_update_config():
 
     for section in ['ai', 'fallback', 'watermark', 'broadcast', 'app']:
         if section in data:
-            config[section].update(data[section])
+            section_data = data[section]
+            # 过滤掉 None/空字符串值，避免覆盖已有配置（特别是 api_key）
+            cleaned = {k: v for k, v in section_data.items() if v is not None and v != ''}
+            config[section].update(cleaned)
 
     save_config(config)
     return jsonify({"success": True, "config": config})
@@ -555,7 +556,7 @@ def api_health():
 
 if __name__ == '__main__':
     print("=" * 50)
-    print("  壹准 AI 营销助手 - 后端服务")
+    print("  壹准AI微信营销助手 - 后端服务")
     print("  http://localhost:5679")
     print("=" * 50)
     app.run(host='127.0.0.1', port=5679, debug=False)

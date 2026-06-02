@@ -7,4 +7,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectImage: () => ipcRenderer.invoke('select-image'),
   saveFile: (path) => ipcRenderer.invoke('save-file', path),
   openURL: (url) => ipcRenderer.send('open-url', url),
+  downloadUpdate: (url) => ipcRenderer.invoke('download-update', url),
+  onDownloadProgress: (callback) => ipcRenderer.on('download-progress', (event, data) => callback(data)),
 });

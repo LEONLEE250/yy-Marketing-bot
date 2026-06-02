@@ -91,7 +91,9 @@ function setupRecipientMode() {
     e.target.classList.add('active');
     state.selectedMode = e.target.dataset.mode;
     const kwInput = document.getElementById('keywordInput');
+    const manualInput = document.getElementById('manualInput');
     kwInput.classList.toggle('hidden', state.selectedMode !== 'keyword');
+    manualInput.classList.toggle('hidden', state.selectedMode !== 'manual');
     loadSessions();
   });
 }
@@ -237,7 +239,7 @@ async function loadSessions() {
       state.sessions = data.sessions || [];
       renderRecipients();
     } else {
-      toast('无法获取会话列表');
+      toast('获取会话失败: ' + (data.error || '请确保微信已登录并置于前台'));
     }
   } catch (err) {
     toast('连接后端失败: ' + err.message);
@@ -310,6 +312,19 @@ async function doBroadcast() {
 
   if (mode === 'all') {
     targets = state.sessions;
+  } else if (mode === 'manual') {
+    // 手动模式：从输入框读取收件人
+    const manualText = document.getElementById('manualField').value.trim();
+    if (manualText) {
+      targets = manualText.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+    }
+    // 也合并列表中选择的
+    if (state.selectedRecipients.size > 0) {
+      targets = [...new Set([...targets, ...Array.from(state.selectedRecipients)])];
+    }
+    if (targets.length === 0) {
+      return toast('请选择或输入收件人');
+    }
   } else if (state.selectedRecipients.size === 0) {
     return toast('请选择收件人');
   } else {
@@ -567,37 +582,35 @@ function applyConfig() {
   document.getElementById('aiModel').value = c.ai?.model || 'gpt-4o-mini';
   document.getElementById('useScripts').checked = c.fallback?.use_scripts !== false;
   document.getElementById('allowManual').checked = c.fallback?.allow_manual !== false;
-  document.getElementById('defaultWM').value = c.watermark?.text || '';
-  document.getElementById('defaultWMPos').value = c.watermark?.position || 'bottom-right';
-  document.getElementById('adaptiveColor').checked = c.watermark?.adaptive_color !== false;
   document.getElementById('sendInterval').value = c.broadcast?.interval || 0.8;
   document.getElementById('excludeList').value = (c.broadcast?.exclude || []).join(', ');
+  // 图片工具的水印设置也同步
   document.getElementById('wmText').value = c.watermark?.text || '';
   document.getElementById('wmPosition').value = c.watermark?.position || 'bottom-right';
 }
 
 async function saveAllSettings() {
+  const apiKeyInput = document.getElementById('apiKey').value.trim();
   const config = {
     ai: {
       enabled: document.getElementById('aiEnabled').checked,
       api_url: document.getElementById('apiUrl').value.trim(),
-      api_key: document.getElementById('apiKey').value.trim(),
+      api_key: apiKeyInput || undefined,  // 空值不更新，保留后端已有 key
       model: document.getElementById('aiModel').value,
     },
     fallback: {
       use_scripts: document.getElementById('useScripts').checked,
       allow_manual: document.getElementById('allowManual').checked,
     },
-    watermark: {
-      text: document.getElementById('defaultWM').value.trim(),
-      position: document.getElementById('defaultWMPos').value,
-      adaptive_color: document.getElementById('adaptiveColor').checked,
-    },
     broadcast: {
       interval: parseFloat(document.getElementById('sendInterval').value) || 0.8,
       exclude: document.getElementById('excludeList').value.split(/[,，]/).map(s => s.trim()).filter(Boolean),
     }
   };
+  // 清理 undefined 字段，避免覆盖后端已有值
+  Object.keys(config.ai).forEach(k => {
+    if (config.ai[k] === undefined) delete config.ai[k];
+  });
 
   try {
     const res = await fetch(`${API}/api/config`, {
@@ -704,10 +717,35 @@ function showUpdateDialog(updateInfo) {
 }
 
 function downloadUpdate(url) {
-  if (url && window.electronAPI) {
-    window.electronAPI.openURL(url);
+  if (!url) {
+    toast('下载链接无效');
+    return;
   }
-  toast('请在浏览器中下载更新包');
+  if (!window.electronAPI) {
+    // 浏览器环境降级：打开下载链接
+    window.open(url, '_blank');
+    toast('请在浏览器中下载更新包');
+    return;
+  }
+
+  toast('正在下载更新...');
+  window.electronAPI.downloadUpdate(url).then((result) => {
+    if (result.success) {
+      toast('更新包已下载');
+    }
+  }).catch((err) => {
+    toast('下载失败: ' + err.message);
+  });
+
+  // 监听下载进度
+  window.electronAPI.onDownloadProgress((data) => {
+    if (data.status === 'downloading') {
+      document.getElementById('statusText').textContent = `下载中 ${data.progress}%`;
+    } else if (data.status === 'error') {
+      toast('下载失败: ' + data.error);
+    }
+  });
+
   document.querySelector('.update-dialog')?.remove();
 }
 
