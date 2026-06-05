@@ -793,30 +793,71 @@ function showUpdateDialog(updateInfo) {
     <div class="update-dialog-body">${updateInfo.release_notes || '暂无更新说明'}</div>
     <div class="update-dialog-actions">
       <button class="btn btn-ghost" onclick="this.closest('.update-dialog').remove()">稍后</button>
-      <button class="btn btn-primary" onclick="downloadUpdate('${updateInfo.download_url || ''}')">下载更新</button>
+      <button class="btn btn-primary" onclick="downloadUpdate('${updateInfo.download_url || ''}', this.closest('.update-dialog-content'))">下载更新</button>
     </div>
   </div>`;
   document.body.appendChild(dialog);
   dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.remove(); });
 }
 
-function downloadUpdate(url) {
+function downloadUpdate(url, contentEl) {
   if (!url) return toast('下载链接无效');
   if (!window.electronAPI) { window.open(url, '_blank'); toast('请在浏览器中下载更新包'); return; }
 
-  toast('正在下载更新...');
-  window.electronAPI.downloadUpdate(url).then((result) => {
-    if (result.success) toast('更新包已下载');
-  }).catch((err) => { toast('下载失败: ' + err.message); });
+  // 把对话框内容替换为进度条
+  contentEl.innerHTML = `
+    <div class="update-dialog-title">正在下载更新</div>
+    <div class="update-progress">
+      <div class="update-progress-bar"><div class="update-progress-fill" id="updateProgressFill"></div></div>
+      <div class="update-progress-text" id="updateProgressText">0%</div>
+    </div>
+    <div class="update-status-text" id="updateStatusText">准备下载...</div>
+    <div class="update-dialog-actions">
+      <button class="btn btn-ghost" id="updateCancelBtn" style="display:none">取消</button>
+    </div>
+  `;
+
+  const fill = document.getElementById('updateProgressFill');
+  const text = document.getElementById('updateProgressText');
+  const status = document.getElementById('updateStatusText');
+  const dialogEl = contentEl.closest('.update-dialog');
+  let downloadedPath = null;
 
   window.electronAPI.onDownloadProgress((data) => {
     if (data.status === 'downloading') {
-      document.getElementById('statusText').textContent = `下载中 ${data.progress}%`;
+      fill.style.width = data.progress + '%';
+      text.textContent = data.progress + '%';
+      status.textContent = '正在下载安装包...';
+    } else if (data.status === 'complete') {
+      downloadedPath = data.filePath;
+      fill.style.width = '100%';
+      text.textContent = '100%';
+      status.textContent = '下载完成';
+      // 替换为安装按钮
+      contentEl.querySelector('.update-dialog-actions').innerHTML = `
+        <button class="btn btn-ghost" onclick="this.closest('.update-dialog').remove()">稍后安装</button>
+        <button class="btn btn-primary" id="updateInstallBtn">立即安装</button>
+      `;
+      document.getElementById('updateInstallBtn').addEventListener('click', () => {
+        if (dialogEl) dialogEl.remove();
+        if (downloadedPath && window.electronAPI) {
+          window.electronAPI.installUpdate(downloadedPath);
+        }
+      });
     } else if (data.status === 'error') {
-      toast('下载失败: ' + data.error);
+      fill.style.background = '#ff3b30';
+      status.textContent = '下载失败: ' + (data.error || '未知错误');
+      contentEl.querySelector('.update-dialog-actions').innerHTML = `
+        <button class="btn btn-ghost" onclick="this.closest('.update-dialog').remove()">关闭</button>
+        <button class="btn btn-primary" onclick="downloadUpdate('${url}', this.closest('.update-dialog-content'))">重试</button>
+      `;
     }
   });
-  document.querySelector('.update-dialog')?.remove();
+
+  window.electronAPI.downloadUpdate(url).catch((err) => {
+    status.textContent = '下载失败: ' + err.message;
+    fill.style.background = '#ff3b30';
+  });
 }
 
 // ============================================================

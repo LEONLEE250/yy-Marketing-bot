@@ -231,21 +231,7 @@ function createWindow() {
         file.on('finish', () => {
           file.close();
           mainWindow.webContents.send('download-progress', { status: 'complete', filePath });
-          dialog.showMessageBox(mainWindow, {
-            type: 'info',
-            title: '更新下载完成',
-            message: '安装包已下载到下载文件夹',
-            detail: '是否立即安装更新？（安装过程中软件将关闭）',
-            buttons: ['稍后安装', '立即安装'],
-            defaultId: 1,
-          }).then(async (result) => {
-            if (result.response === 1) {
-              shell.openPath(filePath);
-              await shutdownBackend();
-              setTimeout(() => app.quit(), 500);
-            }
-            resolve({ success: true, filePath });
-          });
+          resolve({ success: true, filePath });
         });
 
         file.on('error', (err) => {
@@ -263,6 +249,14 @@ function createWindow() {
         reject(err);
       });
     });
+  });
+
+  // 安装更新 — 打开安装包并退出
+  ipcMain.handle('install-update', async (event, filePath) => {
+    shell.openPath(filePath);
+    await shutdownBackend();
+    setTimeout(() => app.quit(), 500);
+    return { success: true };
   });
 }
 
