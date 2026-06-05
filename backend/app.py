@@ -1,5 +1,5 @@
 """
-壹准 AI 营销助手 - Flask 后端 API v1.1.2
+壹准 AI 营销助手 - Flask 后端 API v1.1.3
 端口 5679
 """
 
@@ -30,7 +30,7 @@ CORS(app)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 
 # 应用版本号（单一来源，所有接口统一引用）
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.3"
 os.makedirs(CONFIG_DIR, exist_ok=True)
 CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
 SCRIPTS_FILE = os.path.join(CONFIG_DIR, 'scripts.json')
@@ -529,6 +529,38 @@ def api_shutdown():
     t = threading.Thread(target=_do_shutdown, daemon=True)
     t.start()
     return jsonify({"success": True, "message": "shutting down"})
+
+
+# ============================================================
+# 朋友圈
+# ============================================================
+
+@app.route('/api/moment/publish', methods=['POST'])
+def api_publish_moment():
+    """发布朋友圈"""
+    data = request.json or {}
+    text = data.get('text', '').strip()
+    image_path = data.get('image_path')
+
+    if not text and not image_path:
+        return jsonify({"success": False, "error": "请至少输入文字或上传图片"})
+
+    if len(text) > 2000:
+        return jsonify({"success": False, "error": "文字过长，最多2000字"})
+
+    try:
+        from wechat_moment import publish_text_moment, publish_image_moment
+
+        if image_path and os.path.isfile(image_path):
+            result = publish_image_moment(image_path, text)
+        else:
+            result = publish_text_moment(text)
+
+        return jsonify(result)
+    except ImportError:
+        return jsonify({"success": False, "error": "朋友圈模块加载失败，请更新软件"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 
 # ============================================================

@@ -1,6 +1,6 @@
 /* ============================================================
-   壹准 AI 营销助手 v1.1.2 - 前端逻辑
-   wxauto4 引擎 + 图片上传 + 会话列表 + 定时发送
+   壹准 AI 营销助手 v1.1.3 - 前端逻辑
+   wxauto4 引擎 + 图片上传 + 会话列表 + 定时发送 + 朋友圈
    ============================================================ */
 
 const API = 'http://127.0.0.1:5679';
@@ -884,3 +884,147 @@ function toast(msg) {
   const el = document.getElementById('scheduledTime');
   if (el) el.value = defaultTime;
 })();
+
+// ============================================================
+// 朋友圈
+// ============================================================
+
+let momentState = {
+  imagePath: null,
+  selectedStyle: '朋友圈',
+};
+
+// 文案风格选择
+(() => {
+  const group = document.getElementById('momentStyleGroup');
+  if (group) {
+    group.addEventListener('click', (e) => {
+      if (!e.target.classList.contains('pill')) return;
+      group.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+      e.target.classList.add('active');
+      momentState.selectedStyle = e.target.dataset.style;
+    });
+  }
+})();
+
+// 字数统计
+(() => {
+  const ta = document.getElementById('momentText');
+  if (ta) {
+    ta.addEventListener('input', () => {
+      const count = document.getElementById('momentCharCount');
+      if (count) count.textContent = ta.value.length;
+    });
+  }
+})();
+
+async function selectMomentImage() {
+  if (window.electronAPI) {
+    const path = await window.electronAPI.selectImage();
+    if (path) {
+      momentState.imagePath = path;
+      showImagePreview(path, 'momentImagePreview', 'momentUploadIcon', 'momentUploadText');
+    }
+  } else {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const res = await fetch(`${API}/api/image/upload`, { method: 'POST', body: formData });
+        const data = await res.json();
+        if (data.success) {
+          momentState.imagePath = data.path;
+          const reader = new FileReader();
+          reader.onload = (ev) => showImagePreview(ev.target.result, 'momentImagePreview', 'momentUploadIcon', 'momentUploadText');
+          reader.readAsDataURL(file);
+        } else {
+          toast('上传失败: ' + data.error);
+        }
+      } catch (err) {
+        toast('上传失败: ' + err.message);
+      }
+    };
+    input.click();
+  }
+}
+
+async function generateMomentCopy() {
+  const context = document.getElementById('momentText').value.trim();
+  if (!context) return toast('请先输入一些场景描述');
+
+  try {
+    const res = await fetch(`${API}/api/copy/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context, style: momentState.selectedStyle })
+    });
+    const data = await res.json();
+    if (data.success) {
+      document.getElementById('momentText').value = data.copy;
+      const count = document.getElementById('momentCharCount');
+      if (count) count.textContent = data.copy.length;
+      toast(data.source === 'ai' ? 'AI 已生成文案' : '话术库已匹配');
+    } else {
+      toast('生成失败: ' + data.error);
+    }
+  } catch (err) {
+    toast('生成失败: ' + err.message);
+  }
+}
+
+async function publishMoment() {
+  const text = document.getElementById('momentText').value.trim();
+  if (!text && !momentState.imagePath) return toast('请至少输入文字或上传图片');
+  if (text.length > 2000) return toast('文字不能超过2000字');
+
+  const btn = document.getElementById('momentPublishBtn');
+  btn.textContent = '发布中...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`${API}/api/moment/publish`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text,
+        image_path: momentState.imagePath || null
+      })
+    });
+    const data = await res.json();
+
+    const card = document.getElementById('momentResultCard');
+    const result = document.getElementById('momentResult');
+    card.classList.remove('hidden');
+
+    if (data.success) {
+      result.innerHTML = '<span style="color:#34c759">发布成功</span>';
+      toast('朋友圈发布成功');
+      document.getElementById('momentText').value = '';
+      momentState.imagePath = null;
+      document.getElementById('momentImagePreview').classList.add('hidden');
+      const icon = document.getElementById('momentUploadIcon');
+      const txt = document.getElementById('momentUploadText');
+      if (icon) icon.classList.remove('hidden');
+      if (txt) txt.classList.remove('hidden');
+      const count = document.getElementById('momentCharCount');
+      if (count) count.textContent = '0';
+    } else {
+      result.innerHTML = '<span style="color:#ff3b30">发布失败</span><br>' + (data.error || '未知错误');
+      toast('发布失败: ' + (data.error || '未知错误'));
+    }
+  } catch (err) {
+    const card = document.getElementById('momentResultCard');
+    const result = document.getElementById('momentResult');
+    card.classList.remove('hidden');
+    result.innerHTML = '<span style="color:#ff3b30">发布失败</span><br>' + err.message;
+    toast('发布失败: ' + err.message);
+  } finally {
+    btn.textContent = '发布朋友圈';
+    btn.disabled = false;
+  }
+}
