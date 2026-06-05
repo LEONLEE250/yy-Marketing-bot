@@ -176,6 +176,14 @@ function createWindow() {
     return result.canceled ? null : result.filePaths[0];
   });
 
+  ipcMain.handle('select-video', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [{ name: 'Videos', extensions: ['mp4', 'mov', 'avi', 'wmv', 'mkv', 'flv', 'm4v', 'webm'] }]
+    });
+    return result.canceled ? null : result.filePaths[0];
+  });
+
   // 保存文件
   ipcMain.handle('save-file', async (event, sourcePath) => {
     const result = await dialog.showSaveDialog(mainWindow, {

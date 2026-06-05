@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   maximize: () => ipcRenderer.send('window-maximize'),
   close: () => ipcRenderer.send('window-close'),
   selectImage: () => ipcRenderer.invoke('select-image'),
+  selectVideo: () => ipcRenderer.invoke('select-video'),
   saveFile: (path) => ipcRenderer.invoke('save-file', path),
   openURL: (url) => ipcRenderer.send('open-url', url),
   downloadUpdate: (url) => ipcRenderer.invoke('download-update', url),

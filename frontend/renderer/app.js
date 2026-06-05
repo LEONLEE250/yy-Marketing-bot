@@ -890,11 +890,13 @@ function toast(msg) {
 // ============================================================
 
 let momentState = {
-  imagePath: null,
+  mediaPath: null,
+  mediaType: null, // 'image' | 'video' | null
   selectedStyle: '朋友圈',
+  sendMode: 'now', // 'now' | 'scheduled'
 };
 
-// 文案风格选择
+// 文案风格
 (() => {
   const group = document.getElementById('momentStyleGroup');
   if (group) {
@@ -907,13 +909,27 @@ let momentState = {
   }
 })();
 
-// 字数统计
+// 字数
 (() => {
   const ta = document.getElementById('momentText');
-  if (ta) {
-    ta.addEventListener('input', () => {
-      const count = document.getElementById('momentCharCount');
-      if (count) count.textContent = ta.value.length;
+  if (ta) ta.addEventListener('input', () => {
+    const c = document.getElementById('momentCharCount');
+    if (c) c.textContent = ta.value.length;
+  });
+})();
+
+// 发送模式
+(() => {
+  const group = document.getElementById('momentSendMode');
+  if (group) {
+    group.addEventListener('click', (e) => {
+      if (!e.target.classList.contains('pill')) return;
+      group.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+      e.target.classList.add('active');
+      momentState.sendMode = e.target.dataset.mode;
+      document.getElementById('momentSchedulePanel').classList.toggle('hidden', e.target.dataset.mode !== 'scheduled');
+      const btn = document.getElementById('momentPublishBtn');
+      btn.textContent = e.target.dataset.mode === 'scheduled' ? '创建定时任务' : '发布朋友圈';
     });
   }
 })();
@@ -921,79 +937,109 @@ let momentState = {
 async function selectMomentImage() {
   if (window.electronAPI) {
     const path = await window.electronAPI.selectImage();
-    if (path) {
-      momentState.imagePath = path;
-      showImagePreview(path, 'momentImagePreview', 'momentUploadIcon', 'momentUploadText');
-    }
+    if (path) setMomentMedia(path, 'image');
   } else {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
+    const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/*';
     input.onchange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const formData = new FormData();
-      formData.append('file', file);
+      const file = e.target.files[0]; if (!file) return;
+      const fd = new FormData(); fd.append('file', file);
       try {
-        const res = await fetch(`${API}/api/image/upload`, { method: 'POST', body: formData });
+        const res = await fetch(`${API}/api/image/upload`, { method: 'POST', body: fd });
         const data = await res.json();
-        if (data.success) {
-          momentState.imagePath = data.path;
-          const reader = new FileReader();
-          reader.onload = (ev) => showImagePreview(ev.target.result, 'momentImagePreview', 'momentUploadIcon', 'momentUploadText');
-          reader.readAsDataURL(file);
-        } else {
-          toast('上传失败: ' + data.error);
-        }
-      } catch (err) {
-        toast('上传失败: ' + err.message);
-      }
+        if (data.success) setMomentMedia(data.path, 'image');
+        else toast('上传失败: ' + data.error);
+      } catch (err) { toast('上传失败: ' + err.message); }
     };
     input.click();
   }
 }
 
-async function generateMomentCopy() {
-  const context = document.getElementById('momentText').value.trim();
-  if (!context) return toast('请先输入一些场景描述');
+async function selectMomentVideo() {
+  if (window.electronAPI) {
+    const path = await window.electronAPI.selectVideo?.();
+    if (path) setMomentMedia(path, 'video');
+    else {
+      // fallback: use generic file dialog
+      const input = document.createElement('input'); input.type = 'file'; input.accept = 'video/*';
+      input.onchange = (e) => {
+        const f = e.target.files[0]; if (!f) return;
+        // Electron returns file path
+        setMomentMedia(f.path || URL.createObjectURL(f), 'video');
+      };
+      input.click();
+    }
+  } else {
+    const input = document.createElement('input'); input.type = 'file'; input.accept = 'video/*';
+    input.onchange = async (e) => {
+      const file = e.target.files[0]; if (!file) return;
+      const fd = new FormData(); fd.append('file', file);
+      try {
+        const res = await fetch(`${API}/api/image/upload`, { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.success) setMomentMedia(data.path, 'video');
+        else toast('上传失败: ' + data.error);
+      } catch (err) { toast('上传失败: ' + err.message); }
+    };
+    input.click();
+  }
+}
 
+function setMomentMedia(path, type) {
+  momentState.mediaPath = path;
+  momentState.mediaType = type;
+  const preview = document.getElementById('momentMediaPreview');
+  preview.innerHTML = type === 'video'
+    ? '<span style="font-size:32px">🎬</span><div style="font-size:12px;color:var(--text-secondary)">视频已选择</div>'
+    : `<img src="file://${path}" style="max-width:200px;max-height:200px;border-radius:8px">`;
+  document.getElementById('momentUploadIcon')?.classList.add('hidden');
+  document.getElementById('momentUploadText')?.classList.add('hidden');
+}
+
+function clearMomentMedia() {
+  momentState.mediaPath = null;
+  momentState.mediaType = null;
+  document.getElementById('momentMediaPreview').innerHTML = '';
+  document.getElementById('momentUploadIcon')?.classList.remove('hidden');
+  document.getElementById('momentUploadText')?.classList.remove('hidden');
+}
+
+async function generateMomentCopy() {
+  const ctx = document.getElementById('momentText').value.trim();
+  if (!ctx) return toast('请先输入场景描述');
   try {
     const res = await fetch(`${API}/api/copy/generate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ context, style: momentState.selectedStyle })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context: ctx, style: momentState.selectedStyle })
     });
     const data = await res.json();
     if (data.success) {
       document.getElementById('momentText').value = data.copy;
-      const count = document.getElementById('momentCharCount');
-      if (count) count.textContent = data.copy.length;
-      toast(data.source === 'ai' ? 'AI 已生成文案' : '话术库已匹配');
-    } else {
-      toast('生成失败: ' + data.error);
-    }
-  } catch (err) {
-    toast('生成失败: ' + err.message);
-  }
+      document.getElementById('momentCharCount').textContent = data.copy.length;
+      toast(data.source === 'ai' ? 'AI 已生成' : '话术库匹配');
+    } else { toast('生成失败: ' + data.error); }
+  } catch (err) { toast('生成失败: ' + err.message); }
 }
 
 async function publishMoment() {
   const text = document.getElementById('momentText').value.trim();
-  if (!text && !momentState.imagePath) return toast('请至少输入文字或上传图片');
+  if (!text && !momentState.mediaPath) return toast('请至少输入文字或上传图片/视频');
   if (text.length > 2000) return toast('文字不能超过2000字');
+  if (momentState.mediaType === 'video' && momentState.mediaPath && !/\.[mp4|mov|avi|wmv|mkv|flv|m4v|webm]$/i.test(momentState.mediaPath))
+    return toast('视频格式暂不支持');
 
   const btn = document.getElementById('momentPublishBtn');
-  btn.textContent = '发布中...';
-  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '发布中...'; btn.disabled = true;
+
+  const isScheduled = momentState.sendMode === 'scheduled';
+  const scheduledAt = isScheduled ? document.getElementById('momentScheduledTime')?.value : null;
+
+  if (isScheduled && !scheduledAt) { btn.textContent = orig; btn.disabled = false; return toast('请选择定时时间'); }
 
   try {
     const res = await fetch(`${API}/api/moment/publish`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text,
-        image_path: momentState.imagePath || null
-      })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, media_path: momentState.mediaPath || null, scheduled_at: scheduledAt || null })
     });
     const data = await res.json();
 
@@ -1002,29 +1048,26 @@ async function publishMoment() {
     card.classList.remove('hidden');
 
     if (data.success) {
-      result.innerHTML = '<span style="color:#34c759">发布成功</span>';
-      toast('朋友圈发布成功');
-      document.getElementById('momentText').value = '';
-      momentState.imagePath = null;
-      document.getElementById('momentImagePreview').classList.add('hidden');
-      const icon = document.getElementById('momentUploadIcon');
-      const txt = document.getElementById('momentUploadText');
-      if (icon) icon.classList.remove('hidden');
-      if (txt) txt.classList.remove('hidden');
-      const count = document.getElementById('momentCharCount');
-      if (count) count.textContent = '0';
+      if (isScheduled) {
+        result.innerHTML = `<span style="color:#0071e3">定时任务已创建</span><br>将于 ${scheduledAt.replace('T',' ')} 自动发布`;
+        toast('定时任务已创建');
+      } else {
+        result.innerHTML = '<span style="color:#34c759">发布成功</span>';
+        toast('发布成功');
+        document.getElementById('momentText').value = '';
+        document.getElementById('momentCharCount').textContent = '0';
+        clearMomentMedia();
+      }
     } else {
-      result.innerHTML = '<span style="color:#ff3b30">发布失败</span><br>' + (data.error || '未知错误');
-      toast('发布失败: ' + (data.error || '未知错误'));
+      result.innerHTML = `<span style="color:#ff3b30">失败</span><br>${data.error || '未知错误'}`;
+      toast('失败: ' + (data.error || '未知错误'));
     }
   } catch (err) {
     const card = document.getElementById('momentResultCard');
-    const result = document.getElementById('momentResult');
     card.classList.remove('hidden');
-    result.innerHTML = '<span style="color:#ff3b30">发布失败</span><br>' + err.message;
-    toast('发布失败: ' + err.message);
+    document.getElementById('momentResult').innerHTML = `<span style="color:#ff3b30">失败</span><br>${err.message}`;
+    toast('失败: ' + err.message);
   } finally {
-    btn.textContent = '发布朋友圈';
-    btn.disabled = false;
+    btn.textContent = orig; btn.disabled = false;
   }
 }

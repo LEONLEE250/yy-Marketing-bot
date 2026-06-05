@@ -47,7 +47,7 @@ a = Analysis(
     datas=[('data', 'data')] + wxa_files + comtypes_gen_project_datas + wxauto4_datas + comtypes_datas + comtypes_gen_datas,
     hiddenimports=[
         'flask', 'flask_cors', 'PIL', 'requests',
-        'image_enhancer', 'ai_copywriter', 'wxauto_service', 'wechat_moment',
+        'image_enhancer', 'ai_copywriter', 'wxauto_service', 'wechat_moment', 'wechat_moment_v2',
         'numpy', 'PIL.Image', 'PIL.ImageDraw', 'PIL.ImageFont',
         'PIL.ImageFilter', 'PIL.ImageEnhance',
         'shutil', 'json', 'hashlib', 'base64',

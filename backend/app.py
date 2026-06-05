@@ -537,28 +537,49 @@ def api_shutdown():
 
 @app.route('/api/moment/publish', methods=['POST'])
 def api_publish_moment():
-    """发布朋友圈"""
+    """发布朋友圈（文字/图片/视频）"""
     data = request.json or {}
     text = data.get('text', '').strip()
-    image_path = data.get('image_path')
+    media_path = data.get('media_path')  # 图片或视频路径
+    scheduled_at = data.get('scheduled_at')  # 可选：定时发布
 
-    if not text and not image_path:
-        return jsonify({"success": False, "error": "请至少输入文字或上传图片"})
+    if not text and not media_path:
+        return jsonify({"success": False, "error": "请至少输入文字或上传图片/视频"})
 
     if len(text) > 2000:
         return jsonify({"success": False, "error": "文字过长，最多2000字"})
 
     try:
-        from wechat_moment import publish_text_moment, publish_image_moment
+        from wechat_moment_v2 import publish, schedule
 
-        if image_path and os.path.isfile(image_path):
-            result = publish_image_moment(image_path, text)
+        if scheduled_at:
+            result = schedule(text, scheduled_at, media_path or None)
         else:
-            result = publish_text_moment(text)
+            result = publish(text, media_path or None)
 
         return jsonify(result)
     except ImportError:
-        return jsonify({"success": False, "error": "朋友圈模块加载失败，请更新软件"})
+        return jsonify({"success": False, "error": "朋友圈模块加载失败，请更新到最新版本"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/moment/schedule', methods=['GET'])
+def api_get_scheduled_moments():
+    """查看定时朋友圈任务"""
+    try:
+        from wechat_moment_v2 import get_scheduled_moments
+        return jsonify({"success": True, "tasks": get_scheduled_moments()})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/moment/schedule/<task_id>', methods=['DELETE'])
+def api_cancel_moment(task_id):
+    """取消定时朋友圈"""
+    try:
+        from wechat_moment_v2 import cancel_scheduled
+        return jsonify(cancel_scheduled(task_id))
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
