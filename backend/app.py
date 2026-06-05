@@ -1,5 +1,5 @@
 """
-壹准 AI 营销助手 - Flask 后端 API v1.1.0
+壹准 AI 营销助手 - Flask 后端 API v1.1.2
 端口 5679
 """
 
@@ -30,7 +30,7 @@ CORS(app)
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 
 # 应用版本号（单一来源，所有接口统一引用）
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.2"
 os.makedirs(CONFIG_DIR, exist_ok=True)
 CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
 SCRIPTS_FILE = os.path.join(CONFIG_DIR, 'scripts.json')
