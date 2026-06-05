@@ -10,6 +10,9 @@ on:
         description: 'Version tag (e.g. v1.1.1)'
         required: true
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -42,27 +45,15 @@ jobs:
       - name: Build Electron app
         run: npx electron-builder --win --publish never
 
-      - name: Generate Release Notes
-        id: notes
-        shell: bash
-        run: |
-          VERSION="${{ github.ref_name }}"
-          echo "## ${VERSION} 更新内容" > release_notes.md
-          echo "" >> release_notes.md
-          echo "> 请下载下方的 .exe 安装包进行安装" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "### 安装方式" >> release_notes.md
-          echo "1. 下载 \`.exe\` 安装包" >> release_notes.md
-          echo "2. 双击安装" >> release_notes.md
-          echo "3. 打开并登录微信电脑版" >> release_notes.md
-          echo "4. 启动「壹准AI微信营销助手」" >> release_notes.md
-          cat release_notes.md
-
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
           files: build/*.exe
-          body_path: release_notes.md
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            > 请下载下方的 .exe 安装包进行安装
+
+            ### 安装方式
+            1. 下载 `.exe` 安装包
+            2. 双击安装
+            3. 打开并登录微信电脑版
+            4. 启动「壹准AI微信营销助手」
