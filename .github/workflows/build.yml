@@ -25,8 +25,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag ${{ github.event.inputs.version }}
-          git push origin ${{ github.event.inputs.version }}
+          git tag -f ${{ github.event.inputs.version }}
+          git push origin ${{ github.event.inputs.version }} -f
 
       - name: Setup Python
         uses: actions/setup-python@v5
