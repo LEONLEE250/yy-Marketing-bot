@@ -28,6 +28,9 @@ CORS(app)
 # ============================================================
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+
+# 应用版本号（单一来源，所有接口统一引用）
+APP_VERSION = "1.1.0"
 os.makedirs(CONFIG_DIR, exist_ok=True)
 CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
 SCRIPTS_FILE = os.path.join(CONFIG_DIR, 'scripts.json')
@@ -53,7 +56,7 @@ DEFAULT_CONFIG = {
         "exclude": ["微信团队", "文件传输助手"]
     },
     "app": {
-        "version": "1.1.0",
+        "version": APP_VERSION,
         "update_channel": "github"
     }
 }
@@ -443,8 +446,7 @@ def api_update_config():
 
 @app.route('/api/update/check', methods=['GET'])
 def api_check_update():
-    config = load_config()
-    current_ver = config['app'].get('version', '1.0.0')
+    current_ver = APP_VERSION
 
     try:
         import urllib.request
@@ -506,7 +508,7 @@ def _compare_versions(v1, v2):
 def api_health():
     return jsonify({
         "status": "ok",
-        "version": "1.1.0",
+        "version": APP_VERSION,
         "backend_path": os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__)
     })
 
@@ -517,7 +519,7 @@ def api_health():
 
 if __name__ == '__main__':
     print("=" * 50)
-    print("  壹准AI微信营销助手 - 后端服务 v1.1.0")
+    print(f"  壹准AI微信营销助手 - 后端服务 v{APP_VERSION}")
     print("  http://localhost:5679")
     print("=" * 50)
     app.run(host='127.0.0.1', port=5679, debug=False)
