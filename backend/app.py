@@ -514,6 +514,24 @@ def api_health():
 
 
 # ============================================================
+# 优雅关闭
+# ============================================================
+
+@app.route('/api/shutdown', methods=['POST'])
+def api_shutdown():
+    """优雅关闭后端服务"""
+    import threading
+
+    def _do_shutdown():
+        time.sleep(0.3)
+        os._exit(0)
+
+    t = threading.Thread(target=_do_shutdown, daemon=True)
+    t.start()
+    return jsonify({"success": True, "message": "shutting down"})
+
+
+# ============================================================
 # 启动
 # ============================================================
 

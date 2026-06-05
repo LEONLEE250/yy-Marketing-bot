@@ -61,28 +61,53 @@ function getExpectedBackendPath() {
 }
 
 function killConflictingBackend(expectedBackendPath) {
-  if (!expectedBackendPath) {
-    return Promise.resolve();
-  }
-
-  const escapedPath = expectedBackendPath.replace(/'/g, "''");
+  // 启动时无差别清除端口 5679 上所有监听进程，不比较路径
+  // 因为上一轮退出残留的 backend 必须全部清理，否则新实例无法绑定端口
   const script = [
     '$conns = @()',
     'try { $conns = Get-NetTCPConnection -LocalPort 5679 -State Listen -ErrorAction Stop } catch {}',
     'if (-not $conns) { exit 0 }',
-    "$expected = '" + escapedPath + "'",
     'foreach ($conn in $conns) {',
-    '  $filter = "ProcessId = " + $conn.OwningProcess',
-    '  $proc = Get-CimInstance Win32_Process -Filter $filter',
-    '  if ($proc -and $proc.ExecutablePath -and $proc.ExecutablePath -ne $expected) {',
-    '    try { Stop-Process -Id $proc.ProcessId -Force -Confirm:$false } catch {}',
-    '  }',
+    '  try { Stop-Process -Id $conn.OwningProcess -Force -Confirm:$false } catch {}',
     '}'
   ].join('; ');
 
   return new Promise((resolve) => {
     execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true }, () => resolve());
   });
+}
+
+async function shutdownBackend() {
+  if (!backendProcess || backendProcess.killed) return;
+
+  // Step 1: 优雅关闭 — 调后端 /api/shutdown
+  try {
+    const http = require('http');
+    await new Promise((resolve) => {
+      const req = http.request('http://127.0.0.1:5679/api/shutdown', {
+        method: 'POST',
+        timeout: 2000,
+      }, () => resolve());
+      req.on('error', () => resolve());
+      req.end();
+    });
+    await wait(800);
+  } catch (_) {}
+
+  // Step 2: Node 进程 kill（Windows 上等效 TerminateProcess）
+  if (!backendProcess.killed) {
+    try { backendProcess.kill(); } catch (_) {}
+    await wait(300);
+  }
+
+  // Step 3: 兜底 — taskkill /F /T 强杀进程树
+  if (!backendProcess.killed && backendProcess.pid) {
+    try {
+      await new Promise((resolve) => {
+        execFile('taskkill', ['/F', '/T', '/PID', String(backendProcess.pid)], { windowsHide: true }, () => resolve());
+      });
+    } catch (_) {}
+  }
 }
 
 function startBackend() {
@@ -213,13 +238,11 @@ function createWindow() {
             detail: '是否立即安装更新？（安装过程中软件将关闭）',
             buttons: ['稍后安装', '立即安装'],
             defaultId: 1,
-          }).then((result) => {
+          }).then(async (result) => {
             if (result.response === 1) {
               shell.openPath(filePath);
-              setTimeout(() => {
-                if (backendProcess) backendProcess.kill();
-                app.quit();
-              }, 1000);
+              await shutdownBackend();
+              setTimeout(() => app.quit(), 500);
             }
             resolve({ success: true, filePath });
           });
@@ -255,10 +278,13 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  if (backendProcess) backendProcess.kill();
   app.quit();
 });
 
-app.on('before-quit', () => {
-  if (backendProcess) backendProcess.kill();
+app.on('before-quit', async (event) => {
+  if (backendProcess && !backendProcess.killed) {
+    event.preventDefault();
+    await shutdownBackend();
+    app.quit(); // 二次 quit，此时 backendProcess.killed 为 true，直接退出
+  }
 });
