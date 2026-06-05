@@ -7,18 +7,18 @@
     "tested": false
   },
   "fallback": {
-    "use_scripts": false,
+    "use_scripts": true,
     "allow_manual": true
   },
   "broadcast": {
-    "interval": 0.8,
+    "interval": 1,
     "exclude": [
       "微信团队",
       "文件传输助手"
     ]
   },
   "app": {
-    "version": "1.0.3",
+    "version": "1.0.5",
     "update_channel": "github"
   }
 }

@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag (e.g. v1.0.1)'
+        description: 'Version tag (e.g. v1.1.1)'
         required: true
 
 jobs:
@@ -31,27 +31,10 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
-          pip install pyinstaller
 
-      - name: Prepare wechat-wxauto for packaging
+      - name: Build backend with PyInstaller (spec)
         run: |
-          # 从仓库上级目录的 wechat-wxauto 复制到项目内
-          if (Test-Path ../wechat-wxauto) {
-            Copy-Item -Recurse ../wechat-wxauto ./wechat-wxauto
-          } else {
-            Write-Host "wechat-wxauto not found, skipping (will use embedded)"
-          }
-
-      - name: Build backend with PyInstaller
-        run: |
-          pyinstaller --onefile --name backend --distpath backend/dist `
-            --add-data "wechat-wxauto\*.py;wechat-wxauto" `
-            --hidden-import flask --hidden-import flask_cors --hidden-import wxauto `
-            --hidden-import PIL --hidden-import requests --hidden-import numpy `
-            --hidden-import image_enhancer --hidden-import ai_copywriter --hidden-import wxauto_service `
-            --hidden-import PIL.Image --hidden-import PIL.ImageDraw --hidden-import PIL.ImageFont `
-            --hidden-import PIL.ImageFilter --hidden-import PIL.ImageEnhance `
-            backend/app.py
+          pyinstaller backend/backend.spec --noconfirm
 
       - name: Install Node dependencies
         run: npm install
@@ -59,21 +42,27 @@ jobs:
       - name: Build Electron app
         run: npx electron-builder --win --publish never
 
+      - name: Generate Release Notes
+        id: notes
+        shell: bash
+        run: |
+          VERSION="${{ github.ref_name }}"
+          echo "## ${VERSION} 更新内容" > release_notes.md
+          echo "" >> release_notes.md
+          echo "> 请下载下方的 .exe 安装包进行安装" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### 安装方式" >> release_notes.md
+          echo "1. 下载 \`.exe\` 安装包" >> release_notes.md
+          echo "2. 双击安装" >> release_notes.md
+          echo "3. 打开并登录微信电脑版" >> release_notes.md
+          echo "4. 启动「壹准AI微信营销助手」" >> release_notes.md
+          cat release_notes.md
+
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
         with:
           files: build/*.exe
-          body: |
-            ## v1.0.3 更新内容
-
-            - 群发中心：微信按需连接，不再频繁弹窗；只有点击「加载会话」或「发送」时才连接
-            - 图片工具：水印增加配色选择（自动/白色/黑色/半透明）；处理后可预览；导出修复
-            - AI 文案：去掉硬编码模板，LLM prompt 不再强制添加门店地址，完全基于用户输入生成
-
-            ### 使用方式
-            1. 下载 `.exe` 安装包
-            2. 双击安装
-            3. 打开微信电脑版
-            4. 启动「壹准AI微信营销助手」
+          body_path: release_notes.md
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

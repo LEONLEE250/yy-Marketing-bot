@@ -1,6 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, execFile } = require('child_process');
 const https = require('https');
 const fs = require('fs');
 const os = require('os');
@@ -8,17 +8,92 @@ const os = require('os');
 let mainWindow;
 let backendProcess;
 
+function resolvePythonPath() {
+  const candidates = [
+    'C:/Python312/python.exe',
+    process.env.YIZHUN_PYTHON,
+    process.env.PYTHON,
+    'python'
+  ].filter(Boolean);
+  return candidates[0];
+}
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function pingBackend(expectedBackendPath = '') {
+  return new Promise((resolve) => {
+    const req = require('http').get('http://127.0.0.1:5679/api/health', (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(body || '{}');
+          const ok = res.statusCode === 200 && data.status === 'ok';
+          const sameBackend = !expectedBackendPath || !data.backend_path || data.backend_path === expectedBackendPath;
+          resolve(ok && sameBackend);
+        } catch (_) {
+          resolve(false);
+        }
+      });
+    });
+    req.on('error', () => resolve(false));
+    req.setTimeout(1500, () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
+}
+
+async function waitForBackendReady(expectedBackendPath = '', maxAttempts = 15) {
+  for (let i = 0; i < maxAttempts; i += 1) {
+    if (await pingBackend(expectedBackendPath)) return true;
+    await wait(800);
+  }
+  return false;
+}
+
+function getExpectedBackendPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'backend', 'backend.exe')
+    : '';
+}
+
+function killConflictingBackend(expectedBackendPath) {
+  if (!expectedBackendPath) {
+    return Promise.resolve();
+  }
+
+  const escapedPath = expectedBackendPath.replace(/'/g, "''");
+  const script = [
+    '$conns = @()',
+    'try { $conns = Get-NetTCPConnection -LocalPort 5679 -State Listen -ErrorAction Stop } catch {}',
+    'if (-not $conns) { exit 0 }',
+    "$expected = '" + escapedPath + "'",
+    'foreach ($conn in $conns) {',
+    '  $filter = "ProcessId = " + $conn.OwningProcess',
+    '  $proc = Get-CimInstance Win32_Process -Filter $filter',
+    '  if ($proc -and $proc.ExecutablePath -and $proc.ExecutablePath -ne $expected) {',
+    '    try { Stop-Process -Id $proc.ProcessId -Force -Confirm:$false } catch {}',
+    '  }',
+    '}'
+  ].join('; ');
+
+  return new Promise((resolve) => {
+    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true }, () => resolve());
+  });
+}
+
 function startBackend() {
   const isPackaged = app.isPackaged;
   let cmd, args;
 
   if (isPackaged) {
-    // 打包后：resources/backend/backend.exe
     cmd = path.join(process.resourcesPath, 'backend', 'backend.exe');
     args = [];
   } else {
-    // 开发模式：用 python 启动 app.py
-    cmd = 'python';
+    cmd = resolvePythonPath();
     args = [path.join(__dirname, '..', 'backend', 'app.py')];
   }
 
@@ -47,6 +122,7 @@ function createWindow() {
     minWidth: 860,
     minHeight: 600,
     frame: false,
+    title: '壹准AI微信营销助手',
     titleBarStyle: 'hidden',
     backgroundColor: '#f5f5f7',
     webPreferences: {
@@ -106,14 +182,11 @@ function createWindow() {
 
     return new Promise((resolve, reject) => {
       const file = fs.createWriteStream(filePath);
-      https.get(downloadUrl, (response) => {
+
+      function handleResponse(response) {
         // 处理重定向
         if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-          file.close();
-          fs.unlinkSync(filePath);
-          https.get(response.headers.location, (redirectRes) => {
-            downloadFile(redirectRes, file, filePath, resolve, reject);
-          }).on('error', reject);
+          https.get(response.headers.location, handleResponse).on('error', reject);
           return;
         }
 
@@ -133,7 +206,6 @@ function createWindow() {
         file.on('finish', () => {
           file.close();
           mainWindow.webContents.send('download-progress', { status: 'complete', filePath });
-          // 弹窗询问是否安装
           dialog.showMessageBox(mainWindow, {
             type: 'info',
             title: '更新下载完成',
@@ -144,7 +216,6 @@ function createWindow() {
           }).then((result) => {
             if (result.response === 1) {
               shell.openPath(filePath);
-              // 延迟关闭，让安装程序启动
               setTimeout(() => {
                 if (backendProcess) backendProcess.kill();
                 app.quit();
@@ -160,7 +231,9 @@ function createWindow() {
           mainWindow.webContents.send('download-progress', { status: 'error', error: err.message });
           reject(err);
         });
-      }).on('error', (err) => {
+      }
+
+      https.get(downloadUrl, handleResponse).on('error', (err) => {
         file.close();
         try { fs.unlinkSync(filePath); } catch (e) {}
         mainWindow.webContents.send('download-progress', { status: 'error', error: err.message });
@@ -170,10 +243,15 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  const expectedBackendPath = getExpectedBackendPath();
+  await killConflictingBackend(expectedBackendPath);
   startBackend();
-  // 等后端启动
-  setTimeout(createWindow, 2000);
+  const ready = await waitForBackendReady(expectedBackendPath);
+  if (!ready) {
+    console.error('Backend did not become ready in time or is occupied by another instance');
+  }
+  createWindow();
 });
 
 app.on('window-all-closed', () => {

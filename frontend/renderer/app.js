@@ -1,5 +1,6 @@
 /* ============================================================
-   壹准 AI 营销助手 - 前端逻辑
+   壹准 AI 营销助手 v1.0.5 - 前端逻辑
+   wxauto4 引擎 + 图片上传 + 会话列表 + 定时发送
    ============================================================ */
 
 const API = 'http://127.0.0.1:5679';
@@ -7,11 +8,9 @@ const API = 'http://127.0.0.1:5679';
 let state = {
   currentTab: 0,
   imagePath: null,
-  processedImagePath: null,
   sessions: [],
   selectedRecipients: new Set(),
-  selectedMode: 'manual',
-  selectedScene: '以旧换新',
+  sendMode: 'now',
   selectedStyle: '朋友圈',
   config: {},
   scripts: [],
@@ -24,14 +23,14 @@ let state = {
 document.addEventListener('DOMContentLoaded', async () => {
   setupTabs();
   setupPills();
-  setupRecipientMode();
   setupStylePills();
-  setupScenePills();
+  setupSendMode();
   setupDragDrop();
   await loadConfig();
   await loadScripts();
-  checkWxStatus();  // 仅启动时检查一次
-  // 不再定时轮询，只在用户操作时检查
+  checkWxStatus();
+  loadScheduledTasks();
+  setInterval(loadScheduledTasks, 30000);
 });
 
 // ============================================================
@@ -65,17 +64,6 @@ function setupPills() {
   });
 }
 
-function setupScenePills() {
-  document.getElementById('copyPills').addEventListener('click', (e) => {
-    if (e.target.classList.contains('pill')) {
-      state.selectedScene = e.target.dataset.scene;
-      if (state.selectedScene === '手动输入') {
-        document.getElementById('copyText').focus();
-      }
-    }
-  });
-}
-
 function setupStylePills() {
   document.getElementById('stylePills').addEventListener('click', (e) => {
     if (e.target.classList.contains('pill')) {
@@ -84,22 +72,27 @@ function setupStylePills() {
   });
 }
 
-function setupRecipientMode() {
-  document.getElementById('recipientMode').addEventListener('click', (e) => {
+function setupSendMode() {
+  document.getElementById('sendModeGroup').addEventListener('click', (e) => {
     if (!e.target.classList.contains('pill')) return;
-    document.querySelectorAll('#recipientMode .pill').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('#sendModeGroup .pill').forEach(p => p.classList.remove('active'));
     e.target.classList.add('active');
-    state.selectedMode = e.target.dataset.mode;
-    const kwInput = document.getElementById('keywordInput');
-    const manualInput = document.getElementById('manualInput');
-    kwInput.classList.toggle('hidden', state.selectedMode !== 'keyword');
-    manualInput.classList.toggle('hidden', state.selectedMode !== 'manual');
-    loadSessions();
+    state.sendMode = e.target.dataset.mode;
+    updateSendUI();
   });
 }
 
+function updateSendUI() {
+  const isScheduled = state.sendMode === 'scheduled';
+  document.getElementById('scheduledPanel').classList.toggle('hidden', !isScheduled);
+  const btn = document.getElementById('sendBtn');
+  btn.textContent = isScheduled ? '创建定时任务' : '立即发送';
+  document.getElementById('sendLabel').textContent = isScheduled ? '定时发送' : '一键发送';
+  updateSendInfo();
+}
+
 // ============================================================
-// 拖拽上传
+// 图片上传 & 拖拽
 // ============================================================
 
 function setupDragDrop() {
@@ -120,9 +113,9 @@ async function selectImage() {
     if (path) {
       state.imagePath = path;
       showImagePreview(path, 'imagePreview', 'uploadIcon', 'uploadText');
+      updateSendInfo();
     }
   } else {
-    // fallback: 浏览器环境
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -145,6 +138,9 @@ async function handleImageFile(file) {
       const reader = new FileReader();
       reader.onload = (e) => showImagePreview(e.target.result, 'imagePreview', 'uploadIcon', 'uploadText');
       reader.readAsDataURL(file);
+      updateSendInfo();
+    } else {
+      toast('上传失败: ' + data.error);
     }
   } catch (err) {
     toast('上传失败: ' + err.message);
@@ -162,135 +158,77 @@ function showImagePreview(src, imgId, iconId, textId) {
 }
 
 // ============================================================
-// 图片工具
-// ============================================================
-
-async function selectImageForTool() {
-  if (window.electronAPI) {
-    const path = await window.electronAPI.selectImage();
-    if (path) {
-      state.imagePath = path;
-      showImagePreview(path, 'imgToolPreview');
-    }
-  }
-}
-
-['brightness', 'contrast', 'saturation'].forEach(id => {
-  const el = document.getElementById(id);
-  if (el) {
-    el.addEventListener('input', () => {
-      document.getElementById(id + 'Val').textContent = el.value + '%';
-    });
-  }
-});
-
-async function processImage() {
-  if (!state.imagePath) return toast('请先上传图片');
-  const textLines = document.getElementById('cardTextLines').value.trim().split('\n').filter(Boolean);
-  const watermark = document.getElementById('wmText').value.trim();
-  const position = document.getElementById('wmPosition').value;
-  const wmColor = document.getElementById('wmColor')?.value || 'auto';
-
-  try {
-    const res = await fetch(`${API}/api/image/process`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        image_path: state.imagePath,
-        text_lines: textLines.length ? textLines : null,
-        watermark: watermark || null,
-        position,
-        wm_color: wmColor,
-        enhance: true,
-        brightness: parseInt(document.getElementById('brightness').value) / 100,
-        contrast: parseInt(document.getElementById('contrast').value) / 100,
-        saturation: parseInt(document.getElementById('saturation').value) / 100,
-      })
-    });
-    const data = await res.json();
-    if (data.success) {
-      state.processedImagePath = data.output;
-      // 显示预览
-      const preview = document.getElementById('processedPreview');
-      if (preview && data.output) {
-        preview.src = `${API}/api/image/output/${data.output.split(/[/\\]/).pop()}`;
-        preview.classList.remove('hidden');
-      }
-      toast('图片处理完成');
-    } else {
-      toast('处理失败: ' + data.error);
-    }
-  } catch (err) {
-    toast('处理失败: ' + err.message);
-  }
-}
-
-async function exportImage() {
-  if (!state.processedImagePath) return toast('请先处理图片');
-  if (window.electronAPI) {
-    const dest = await window.electronAPI.saveFile(state.processedImagePath);
-    if (dest) toast('已导出到: ' + dest);
-    else toast('已取消导出');
-  } else {
-    // 浏览器环境：直接下载
-    const a = document.createElement('a');
-    a.href = `${API}/api/image/output/${state.processedImagePath.split(/[/\\]/).pop()}`;
-    a.download = 'processed_image.png';
-    a.click();
-    toast('已下载');
-  }
-}
-
-// ============================================================
 // 会话管理
 // ============================================================
 
 async function loadSessions() {
+  const list = document.getElementById('recipientList');
+  list.classList.remove('hidden');
+  list.innerHTML = '<div class="empty-state">正在读取微信会话列表...</div>';
   try {
     const res = await fetch(`${API}/api/sessions`);
     const data = await res.json();
     if (data.success) {
-      state.sessions = data.sessions || [];
+      state.sessions = Array.isArray(data.sessions) ? data.sessions : [];
       renderRecipients();
+      if (!state.sessions.length) {
+        toast('未读取到真实会话昵称，请先把微信停在聊天首页并保持窗口可见');
+      }
     } else {
-      toast('获取会话失败: ' + (data.error || '请确保微信已登录并置于前台'));
+      state.sessions = [];
+      renderRecipients();
+      const errorText = String(data.error || '获取会话失败，请手动输入联系人发送');
+      const weakHint = data.can_manual_send ? '<div class="empty-state">会话列表暂不可用，但你仍可在上方手动输入联系人后直接发送</div>' : '';
+      list.innerHTML = `${weakHint}<div class="empty-state">${escapeHtml(errorText)}</div>`;
+      toast(errorText);
+      console.error('[loadSessions] failed:', errorText, data);
     }
-    checkWxStatus();  // 刷新连接状态
+    checkWxStatus();
   } catch (err) {
+    state.sessions = [];
+    renderRecipients();
+    list.innerHTML = `<div class="empty-state">连接后端失败：${escapeHtml(err.message)}</div>`;
     toast('连接后端失败: ' + err.message);
   }
 }
 
 function renderRecipients() {
   const list = document.getElementById('recipientList');
-  let sessions = state.sessions;
+  const validSessions = (state.sessions || []).filter(session => {
+    const name = String(session?.name || '').trim();
+    const preview = String(session?.content || '').trim();
+    return !!(name || preview);
+  });
 
-  if (state.selectedMode === 'keyword') {
-    const kw = document.getElementById('keywordField').value.trim();
-    if (kw) {
-      const keywords = kw.split(/[,，]/).map(k => k.trim()).filter(Boolean);
-      sessions = sessions.filter(s => keywords.some(k => s.includes(k)));
-    }
-  }
-
-  if (sessions.length === 0) {
-    list.innerHTML = '<div class="empty-state">没有匹配的会话</div>';
+  if (validSessions.length === 0) {
+    list.innerHTML = '<div class="empty-state">未读取到真实会话昵称，请保持微信聊天首页可见，或先手动输入联系人发送</div>';
   } else {
-    list.innerHTML = sessions.map(s => {
-      const initial = s.charAt(0);
-      const selected = state.selectedRecipients.has(s);
-      return `<div class="recipient-item${selected ? ' selected' : ''}" data-session="${s}" onclick="toggleRecipient('${s.replace(/'/g, "\\'")}', this)">
-        <div class="avatar">${initial}</div>
-        <div class="rec-name">${s}</div>
+    list.innerHTML = validSessions.map((session) => {
+      const name = String(session?.name || '').trim();
+      const preview = String(session?.content || '').trim();
+      const target = name || preview;
+      const initial = target.charAt(0) || '#';
+      const selected = state.selectedRecipients.has(target);
+      return `<div class="recipient-item${selected ? ' selected' : ''}" data-target="${escapeHtml(target)}">
+        <div class="avatar">${escapeHtml(initial)}</div>
+        <div style="flex:1;min-width:0">
+          <div class="rec-name">${escapeHtml(target)}</div>
+          ${preview && preview !== target ? `<div class="rec-preview">${escapeHtml(preview)}</div>` : ''}
+        </div>
         <div class="check-circle"></div>
       </div>`;
     }).join('');
-  }
 
+    list.querySelectorAll('.recipient-item').forEach(item => {
+      item.addEventListener('click', () => toggleRecipient(item.dataset.target, item));
+    });
+  }
+  list.classList.remove('hidden');
   updateSendInfo();
 }
 
 function toggleRecipient(name, el) {
+  if (!name) return;
   if (state.selectedRecipients.has(name)) {
     state.selectedRecipients.delete(name);
     el.classList.remove('selected');
@@ -301,56 +239,86 @@ function toggleRecipient(name, el) {
   updateSendInfo();
 }
 
+function escapeHtml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function updateSendInfo() {
   const info = document.getElementById('sendInfo');
-  const count = state.selectedRecipients.size;
-  if (state.selectedMode === 'all') {
-    info.textContent = `全部 ${state.sessions.length} 个会话`;
-  } else if (count > 0) {
-    const hasImage = state.imagePath ? '含图片 + 文案' : '纯文案';
-    info.innerHTML = `已选 <strong>${count}</strong> 人 · ${hasImage}`;
+  const manualText = document.getElementById('manualField').value.trim();
+
+  // 合并手动输入 + 列表选择
+  let targets = [];
+  if (manualText) {
+    targets = manualText.split(/[,，\n]/).map(s => s.trim()).filter(Boolean);
+  }
+  if (state.selectedRecipients.size > 0) {
+    targets = [...new Set([...targets, ...Array.from(state.selectedRecipients)])];
+  }
+
+  if (targets.length > 0) {
+    const hasImage = state.imagePath ? '含图片' : '';
+    const hasText = document.getElementById('copyText').value.trim() ? ' + 文案' : '';
+    info.innerHTML = `收件人 <strong>${targets.length}</strong> 位 · ${hasImage}${hasText}`;
   } else {
-    info.textContent = '尚未选择收件人';
+    info.textContent = '请输入收件人和内容';
   }
 }
 
+document.getElementById('manualField')?.addEventListener('input', updateSendInfo);
+document.getElementById('copyText')?.addEventListener('input', updateSendInfo);
+
 // ============================================================
-// 群发
+// 群发 / 定时发送
 // ============================================================
+
+function _getTargets() {
+  const manualText = document.getElementById('manualField').value.trim();
+  let manualTargets = [];
+  if (manualText) {
+    manualTargets = manualText.split(/[,，\n]/).map(s => s.trim()).filter(Boolean);
+  }
+  const selectedTargets = Array.from(state.selectedRecipients);
+  const targets = [...new Set([...manualTargets, ...selectedTargets])];
+  let sendMode = 'default';
+  if (manualTargets.length > 0 && selectedTargets.length === 0) sendMode = 'manual_only';
+  else if (manualTargets.length > 0 && selectedTargets.length > 0) sendMode = 'mixed';
+  else if (selectedTargets.length > 0) sendMode = 'session_selected';
+  return { targets, sendMode, manualTargets, selectedTargets };
+}
 
 async function doBroadcast() {
+  const { targets, sendMode } = _getTargets();
   const message = document.getElementById('copyText').value.trim();
-  if (!message) return toast('请输入发送文案');
 
-  let targets = [];
-  let mode = state.selectedMode;
-
-  if (mode === 'all') {
-    targets = state.sessions;
-  } else if (mode === 'manual') {
-    // 手动模式：从输入框读取收件人
-    const manualText = document.getElementById('manualField').value.trim();
-    if (manualText) {
-      targets = manualText.split(/[,，]/).map(s => s.trim()).filter(Boolean);
-    }
-    // 也合并列表中选择的
-    if (state.selectedRecipients.size > 0) {
-      targets = [...new Set([...targets, ...Array.from(state.selectedRecipients)])];
-    }
-    if (targets.length === 0) {
-      return toast('请选择或输入收件人');
-    }
-  } else if (state.selectedRecipients.size === 0) {
-    return toast('请选择收件人');
-  } else {
-    targets = Array.from(state.selectedRecipients);
-    mode = 'manual';
-  }
+  if (targets.length === 0) return toast('请输入收件人（逗号分隔）');
+  if (!message && !state.imagePath) return toast('请至少输入发送内容或上传图片');
 
   const sendBtn = document.getElementById('sendBtn');
-  sendBtn.textContent = '发送中...';
+  sendBtn.textContent = '处理中...';
   sendBtn.classList.add('sending');
   sendBtn.disabled = true;
+
+  try {
+    if (state.sendMode === 'scheduled') {
+      await doScheduledSend(targets, message);
+    } else {
+      await doImmediateSend(targets, message, sendMode);
+    }
+  } finally {
+    updateSendUI();
+    sendBtn.classList.remove('sending');
+    sendBtn.disabled = false;
+  }
+}
+
+async function doImmediateSend(targets, message, sendMode = 'default') {
+  const interval = parseFloat(document.getElementById('sendInterval').value) || 0.8;
 
   try {
     const res = await fetch(`${API}/api/broadcast`, {
@@ -359,24 +327,110 @@ async function doBroadcast() {
       body: JSON.stringify({
         targets,
         message,
-        image_path: state.imagePath,
-        mode,
-        exclude: (document.getElementById('excludeList')?.value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean),
+        image_path: state.imagePath || null,
+        interval,
+        send_mode: sendMode
+      })
+    });
+    const data = await res.json();
+    const sent = Number(data.sent || 0);
+    const total = Number(data.total || targets.length);
+    const failed = Number(data.failed || Math.max(total - sent, 0));
+    const fallbackCount = (data.results || []).filter(x => x.fallback === 'keyboard').length;
+    const failedItems = (data.results || []).filter(x => !x.success);
+    const firstError = failedItems[0]?.error || data.error || '';
+    const modeText = data.send_mode === 'manual_only' ? ' · 手动发送模式' : data.send_mode === 'mixed' ? ' · 混合发送模式' : '';
+    const extra = `${modeText}${fallbackCount ? ` · 兜底发送 ${fallbackCount} 个` : ''}`;
+
+    if (sent === total && total > 0) {
+      toast(`发送完成：${sent}/${total}${extra}`);
+    } else if (sent > 0) {
+      toast(`部分发送成功：${sent}/${total}，失败 ${failed} 个${firstError ? ' · ' + firstError : ''}`);
+    } else {
+      toast('发送失败: ' + (firstError || data.error || '全部发送失败'));
+    }
+  } catch (err) {
+    toast('发送失败: ' + err.message);
+  }
+}
+
+async function doScheduledSend(targets, message) {
+  const scheduledAt = document.getElementById('scheduledTime').value;
+  if (!scheduledAt) return toast('请选择定时发送时间');
+
+  try {
+    const res = await fetch(`${API}/api/broadcast/schedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        targets,
+        message,
+        image_path: state.imagePath || null,
+        scheduled_at: scheduledAt
       })
     });
     const data = await res.json();
     if (data.success) {
-      const sent = data.sent || data.results?.filter(r => r.success).length || targets.length;
-      toast(`发送完成：${sent}/${targets.length}`);
+      toast(`定时任务已创建 · ${data.targets_count}人 · ${data.delay_seconds}秒后执行`);
+      loadScheduledTasks();
     } else {
-      toast('发送失败: ' + (data.error || '未知错误'));
+      toast('创建失败: ' + (data.error || '未知错误'));
     }
   } catch (err) {
-    toast('发送失败: ' + err.message);
-  } finally {
-    sendBtn.textContent = '立即发送';
-    sendBtn.classList.remove('sending');
-    sendBtn.disabled = false;
+    toast('创建失败: ' + err.message);
+  }
+}
+
+// ============================================================
+// 定时任务管理
+// ============================================================
+
+async function loadScheduledTasks() {
+  try {
+    const res = await fetch(`${API}/api/broadcast/schedule`);
+    const data = await res.json();
+    if (data.success && data.tasks && data.tasks.length > 0) {
+      renderScheduledTasks(data.tasks);
+      document.getElementById('scheduledTasksCard').style.display = '';
+    }
+  } catch (err) {}
+}
+
+function renderScheduledTasks(tasks) {
+  const list = document.getElementById('scheduledTasksList');
+  list.innerHTML = tasks.map(t => {
+    const statusMap = {
+      'pending': { text: '等待中', cls: 'tag-new' },
+      'running': { text: '发送中', cls: 'tag-promo' },
+      'completed': { text: '已完成', cls: '' },
+      'failed': { text: '失败', cls: 'tag-brand' },
+      'cancelled': { text: '已取消', cls: '' },
+    };
+    const s = statusMap[t.status] || { text: t.status, cls: '' };
+    return `<div class="script-item">
+      <span class="script-tag ${s.cls}">${s.text}</span>
+      <div class="script-text">
+        ${t.message_preview} · ${t.targets_count}人 · ${t.scheduled_at.replace('T', ' ')}
+      </div>
+      <div class="script-actions">
+        ${t.status === 'pending' ? `<div class="icon-btn danger" onclick="cancelTask('${t.id}')" title="取消">&#x2715;</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function cancelTask(taskId) {
+  try {
+    const res = await fetch(`${API}/api/broadcast/schedule/${taskId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.success) {
+      toast('任务已取消');
+      loadScheduledTasks();
+    } else {
+      toast('取消失败: ' + data.error);
+    }
+  } catch (err) {
+    toast('取消失败: ' + err.message);
   }
 }
 
@@ -385,8 +439,8 @@ async function doBroadcast() {
 // ============================================================
 
 async function generateCopy() {
-  const context = document.getElementById('copyText').value.trim() || state.selectedScene;
-  if (!context) return toast('请输入场景描述');
+  const context = document.getElementById('copyText').value.trim();
+  if (!context) return toast('请输入场景描述或已有内容');
   try {
     const res = await fetch(`${API}/api/copy/generate`, {
       method: 'POST',
@@ -435,12 +489,12 @@ function useCopyForBroadcast() {
   const copy = document.getElementById('copyResult').textContent.trim();
   if (!copy) return toast('没有可用的文案');
   document.getElementById('copyText').value = copy;
-  // 切换到群发中心
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.querySelector('.tab[data-tab="0"]').classList.add('active');
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelector('[data-panel="0"]').classList.add('active');
   state.currentTab = 0;
+  updateSendInfo();
   toast('文案已填入群发中心');
 }
 
@@ -476,8 +530,8 @@ function renderScripts() {
       <span class="script-tag ${tagClass}">${s.tag}</span>
       <div class="script-text">${s.text}</div>
       <div class="script-actions">
-        <div class="icon-btn" onclick="startEditScript('${s.id}')" title="编辑">\u270E</div>
-        <div class="icon-btn danger" onclick="deleteScript('${s.id}')" title="删除">\u2715</div>
+        <div class="icon-btn" onclick="startEditScript('${s.id}')" title="编辑">&#x270E;</div>
+        <div class="icon-btn danger" onclick="deleteScript('${s.id}')" title="删除">&#x2715;</div>
       </div>
     </div>`;
   }).join('');
@@ -599,9 +653,6 @@ function applyConfig() {
   document.getElementById('allowManual').checked = c.fallback?.allow_manual !== false;
   document.getElementById('sendInterval').value = c.broadcast?.interval || 0.8;
   document.getElementById('excludeList').value = (c.broadcast?.exclude || []).join(', ');
-  // 图片工具的水印设置也同步
-  document.getElementById('wmText').value = c.watermark?.text || '';
-  document.getElementById('wmPosition').value = c.watermark?.position || 'bottom-right';
 }
 
 async function saveAllSettings() {
@@ -610,7 +661,7 @@ async function saveAllSettings() {
     ai: {
       enabled: document.getElementById('aiEnabled').checked,
       api_url: document.getElementById('apiUrl').value.trim(),
-      api_key: apiKeyInput || undefined,  // 空值不更新，保留后端已有 key
+      api_key: apiKeyInput || undefined,
       model: document.getElementById('aiModel').value,
     },
     fallback: {
@@ -622,7 +673,6 @@ async function saveAllSettings() {
       exclude: document.getElementById('excludeList').value.split(/[,，]/).map(s => s.trim()).filter(Boolean),
     }
   };
-  // 清理 undefined 字段，避免覆盖后端已有值
   Object.keys(config.ai).forEach(k => {
     if (config.ai[k] === undefined) delete config.ai[k];
   });
@@ -676,21 +726,40 @@ async function testApiConnection() {
 // ============================================================
 
 async function checkWxStatus() {
+  const dot = document.querySelector('.status-dot');
+  const text = document.getElementById('statusText');
+
+  try {
+    const healthRes = await fetch(`${API}/api/health`);
+    const health = await healthRes.json();
+    if (!healthRes.ok || health.status !== 'ok') {
+      throw new Error('health check failed');
+    }
+  } catch (err) {
+    dot.classList.add('off');
+    text.textContent = '后端未启动';
+    return;
+  }
+
   try {
     const res = await fetch(`${API}/api/status`);
     const data = await res.json();
-    const dot = document.querySelector('.status-dot');
-    const text = document.getElementById('statusText');
+    if (data.success === false) {
+      dot.classList.add('off');
+      text.textContent = data.info || '后端已启动，微信状态读取失败，但仍可手动输入联系人直接发送';
+      return;
+    }
     if (data.wx_online) {
       dot.classList.remove('off');
       text.textContent = data.info || '微信已连接';
     } else {
       dot.classList.add('off');
-      text.textContent = data.info || '点击「加载会话」连接微信';
+      text.textContent = data.info || '可手动输入联系人后直接发送';
     }
   } catch (err) {
-    document.querySelector('.status-dot').classList.add('off');
-    document.getElementById('statusText').textContent = '后端未启动';
+    dot.classList.add('off');
+    text.textContent = '后端已启动，微信状态读取失败，但仍可手动输入联系人直接发送';
+    console.error('[checkWxStatus] status api failed:', err);
   }
 }
 
@@ -732,27 +801,14 @@ function showUpdateDialog(updateInfo) {
 }
 
 function downloadUpdate(url) {
-  if (!url) {
-    toast('下载链接无效');
-    return;
-  }
-  if (!window.electronAPI) {
-    // 浏览器环境降级：打开下载链接
-    window.open(url, '_blank');
-    toast('请在浏览器中下载更新包');
-    return;
-  }
+  if (!url) return toast('下载链接无效');
+  if (!window.electronAPI) { window.open(url, '_blank'); toast('请在浏览器中下载更新包'); return; }
 
   toast('正在下载更新...');
   window.electronAPI.downloadUpdate(url).then((result) => {
-    if (result.success) {
-      toast('更新包已下载');
-    }
-  }).catch((err) => {
-    toast('下载失败: ' + err.message);
-  });
+    if (result.success) toast('更新包已下载');
+  }).catch((err) => { toast('下载失败: ' + err.message); });
 
-  // 监听下载进度
   window.electronAPI.onDownloadProgress((data) => {
     if (data.status === 'downloading') {
       document.getElementById('statusText').textContent = `下载中 ${data.progress}%`;
@@ -760,7 +816,6 @@ function downloadUpdate(url) {
       toast('下载失败: ' + data.error);
     }
   });
-
   document.querySelector('.update-dialog')?.remove();
 }
 
@@ -777,9 +832,14 @@ function toast(msg) {
 }
 
 // ============================================================
-// 关键词输入实时筛选
+// 定时时间默认值（5分钟后）
 // ============================================================
 
-document.getElementById('keywordField')?.addEventListener('input', () => {
-  if (state.selectedMode === 'keyword') renderRecipients();
-});
+(() => {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() + 5);
+  const pad = n => String(n).padStart(2, '0');
+  const defaultTime = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const el = document.getElementById('scheduledTime');
+  if (el) el.value = defaultTime;
+})();

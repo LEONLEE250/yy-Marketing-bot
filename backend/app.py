@@ -1,5 +1,5 @@
 """
-壹准 AI 营销助手 - Flask 后端 API
+壹准 AI 营销助手 - Flask 后端 API v1.1.0
 端口 5679
 """
 
@@ -7,19 +7,16 @@ import sys
 import os
 import json
 import time
-import hashlib
-import base64
+import traceback
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 
-# 确保能导入现有模块（开发 + PyInstaller 打包均兼容）
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# 开发模式：wechat-wxauto 在项目父级
-_DEV_WXAUTO = os.path.join(_BASE_DIR, '..', '..', 'wechat-wxauto')
-# 打包模式：backend.exe 在 resources/backend/，wechat-wxauto 在 resources/wechat-wxauto/
+_DEV_WXAUTO = os.path.abspath(os.path.join(_BASE_DIR, '..', '..', 'wechat-wxauto'))
+_PROJECT_WXAUTO = os.path.abspath(os.path.join(_BASE_DIR, '..', 'wechat-wxauto'))
 _EXE_DIR = os.path.dirname(os.path.abspath(sys.executable))
-_PKG_WXAUTO = os.path.join(_EXE_DIR, '..', 'wechat-wxauto')
-for _p in [_DEV_WXAUTO, _PKG_WXAUTO]:
+_PKG_WXAUTO = os.path.abspath(os.path.join(_EXE_DIR, '..', 'wechat-wxauto'))
+for _p in [_DEV_WXAUTO, _PROJECT_WXAUTO, _PKG_WXAUTO]:
     if os.path.isdir(_p) and _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -36,13 +33,8 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
 SCRIPTS_FILE = os.path.join(CONFIG_DIR, 'scripts.json')
 UPLOAD_DIR = os.path.join(CONFIG_DIR, 'uploads')
 OUTPUT_DIR = os.path.join(CONFIG_DIR, 'output')
-# wechat-wxauto 的 output 目录（取第一个存在的）
-_WXAUTO_DIR = _DEV_WXAUTO if os.path.isdir(_DEV_WXAUTO) else (_PKG_WXAUTO if os.path.isdir(_PKG_WXAUTO) else None)
-_WXAUTO_OUTPUT = os.path.join(_WXAUTO_DIR, 'output') if _WXAUTO_DIR else OUTPUT_DIR
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-if os.path.isdir(_WXAUTO_DIR):
-    os.makedirs(_WXAUTO_OUTPUT, exist_ok=True)
 
 DEFAULT_CONFIG = {
     "ai": {
@@ -61,7 +53,7 @@ DEFAULT_CONFIG = {
         "exclude": ["微信团队", "文件传输助手"]
     },
     "app": {
-        "version": "1.0.3",
+        "version": "1.1.0",
         "update_channel": "github"
     }
 }
@@ -121,7 +113,11 @@ def api_status():
             "info": status.get("info", "未知状态")
         })
     except Exception as e:
-        return jsonify({"success": True, "wx_online": False, "info": "后端未就绪"})
+        return jsonify({
+            "success": False,
+            "wx_online": False,
+            "info": f"微信状态读取失败: {str(e)}"
+        })
 
 
 # ============================================================
@@ -151,77 +147,7 @@ def api_match_sessions():
 
 
 # ============================================================
-# 消息发送
-# ============================================================
-
-@app.route('/api/send/text', methods=['POST'])
-def api_send_text():
-    data = request.json or {}
-    try:
-        from wxauto_service import send_text
-        result = send_text(data['to'], data['message'])
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
-
-
-@app.route('/api/send/image', methods=['POST'])
-def api_send_image():
-    data = request.json or {}
-    try:
-        from wxauto_service import send_image
-        result = send_image(data['to'], data['image_path'])
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
-
-
-@app.route('/api/send/text-image', methods=['POST'])
-def api_send_text_image():
-    data = request.json or {}
-    try:
-        from wxauto_service import send_text_and_image
-        result = send_text_and_image(data['to'], data['message'], data['image_path'])
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
-
-
-# ============================================================
-# 群发
-# ============================================================
-
-@app.route('/api/broadcast', methods=['POST'])
-def api_broadcast():
-    """统一群发入口"""
-    data = request.json or {}
-    targets = data.get('targets', [])
-    message = data.get('message', '')
-    image_path = data.get('image_path')
-    mode = data.get('mode', 'manual')  # manual | keyword | all
-    keywords = data.get('keywords', [])
-    exclude = data.get('exclude')
-    interval = data.get('interval', 0.8)
-
-    try:
-        from wxauto_service import (
-            broadcast_image, smart_broadcast_text_image, broadcast_all_text_image
-        )
-
-        if mode == 'all':
-            result = broadcast_all_text_image(message, image_path, exclude)
-        elif mode == 'keyword' and keywords:
-            result = smart_broadcast_text_image(keywords, message, image_path)
-        else:
-            result = broadcast_image(targets, image_path, message)
-
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
-
-
-# ============================================================
-# 图片处理
+# 图片上传
 # ============================================================
 
 @app.route('/api/image/upload', methods=['POST'])
@@ -237,61 +163,96 @@ def api_upload_image():
     return jsonify({"success": True, "path": filepath, "filename": filename})
 
 
-@app.route('/api/image/process', methods=['POST'])
-def api_process_image():
+@app.route('/api/image/output/<filename>', methods=['GET'])
+def api_get_image(filename):
+    filepath = os.path.join(OUTPUT_DIR, filename)
+    if os.path.exists(filepath):
+        return send_file(filepath, mimetype='image/png')
+    return jsonify({"success": False, "error": "File not found"}), 404
+
+
+# ============================================================
+# 群发
+# ============================================================
+
+@app.route('/api/broadcast', methods=['POST'])
+def api_broadcast():
+    """统一群发入口 — 支持纯文本/图文"""
     data = request.json or {}
+    targets = data.get('targets', [])
+    message = data.get('message', '')
     image_path = data.get('image_path')
-    text_lines = data.get('text_lines')
-    watermark = data.get('watermark')
-    position = data.get('position', 'bottom-right')
-    enhance = data.get('enhance', False)
-    brightness = data.get('brightness', 1.1)
-    contrast = data.get('contrast', 1.15)
-    saturation = data.get('saturation', 1.2)
-    wm_color = data.get('wm_color', 'auto')
+    interval = data.get('interval', 0.8)
+    send_mode = data.get('send_mode', 'default')
+
+    if not targets:
+        return jsonify({"success": False, "error": "请提供收件人列表"})
+
+    # 至少要有文字或图片
+    if not message and not image_path:
+        return jsonify({"success": False, "error": "请至少输入发送内容或上传图片"})
 
     try:
-        from image_enhancer import process_image, enhance_image, apply_watermark, render_text_card
+        from wxauto_service import broadcast_image, broadcast_text
 
-        output_name = f"processed_{int(time.time())}.png"
-        result = process_image(
-            image_path, output_name,
-            text_lines=text_lines,
-            watermark=watermark,
-            enhance=enhance,
-            position=position,
-            brightness=brightness,
-            contrast=contrast,
-            saturation=saturation,
-            wm_color=wm_color
-        )
-        # 把输出复制到 OUTPUT_DIR 以便 /api/image/output/ 访问
-        if result.get("success") and result.get("output"):
-            src = result["output"]
-            dst = os.path.join(OUTPUT_DIR, output_name)
-            if os.path.exists(src) and src != dst:
-                import shutil
-                shutil.copy2(src, dst)
-                result["output"] = dst
+        prefer_manual = send_mode == 'manual_only'
+        if image_path and os.path.isfile(image_path):
+            result = broadcast_image(targets, image_path, message, interval, prefer_manual=prefer_manual)
+        else:
+            result = broadcast_text(targets, message, interval, prefer_manual=prefer_manual)
+
+        result['send_mode'] = send_mode
         return jsonify(result)
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
 
-@app.route('/api/image/output/<filename>', methods=['GET'])
-def api_get_image(filename):
-    # 优先查找 OUTPUT_DIR
-    filepath = os.path.join(OUTPUT_DIR, filename)
-    if os.path.exists(filepath):
-        return send_file(filepath, mimetype='image/png')
-    # 也检查 wechat-wxauto output
-    for d in [os.path.join(_WXAUTO_DIR, 'output') if os.path.isdir(_WXAUTO_DIR) else '',
-              os.path.join(_DEV_WXAUTO, 'output') if os.path.isdir(_DEV_WXAUTO) else '']:
-        if d:
-            alt = os.path.join(d, filename)
-            if os.path.exists(alt):
-                return send_file(alt, mimetype='image/png')
-    return jsonify({"success": False, "error": "File not found"}), 404
+# ============================================================
+# 定时发送
+# ============================================================
+
+@app.route('/api/broadcast/schedule', methods=['POST'])
+def api_schedule_broadcast():
+    """创建定时群发任务"""
+    data = request.json or {}
+    targets = data.get('targets', [])
+    message = data.get('message', '')
+    image_path = data.get('image_path')
+    scheduled_at = data.get('scheduled_at', '')
+
+    if not targets:
+        return jsonify({"success": False, "error": "请提供收件人列表"})
+    if not message and not image_path:
+        return jsonify({"success": False, "error": "请至少输入发送内容或上传图片"})
+    if not scheduled_at:
+        return jsonify({"success": False, "error": "请设置定时时间"})
+
+    try:
+        from wxauto_service import schedule_broadcast
+        result = schedule_broadcast(targets, message, scheduled_at, image_path)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/broadcast/schedule', methods=['GET'])
+def api_get_scheduled_tasks():
+    try:
+        from wxauto_service import get_scheduled_tasks
+        result = get_scheduled_tasks()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/broadcast/schedule/<task_id>', methods=['DELETE'])
+def api_cancel_scheduled_task(task_id):
+    try:
+        from wxauto_service import cancel_scheduled_task
+        result = cancel_scheduled_task(task_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
 
 
 # ============================================================
@@ -306,20 +267,17 @@ def api_generate_copy():
 
     config = load_config()
 
-    # 如果启用了 AI API，尝试调用
     if config['ai']['enabled'] and config['ai']['api_key']:
         ai_result = _call_ai_api(config['ai'], context, style)
         if ai_result:
             return jsonify({"success": True, "copy": ai_result, "source": "ai"})
 
-    # 降级：使用话术库
     if config['fallback']['use_scripts']:
         scripts = load_scripts()
         matched = _match_scripts(context, scripts)
         if matched:
             return jsonify({"success": True, "copy": matched, "source": "scripts"})
 
-    # 最终降级：本地智能生成
     try:
         from ai_copywriter import smart_generate
         copy = smart_generate(context, style)
@@ -329,7 +287,6 @@ def api_generate_copy():
 
 
 def _match_scripts(context, scripts):
-    """从话术库匹配最相关的文案"""
     scene_map = {
         "以旧换新": ["以旧换新", "换新机", "回收", "旧手机", "抵扣", "折价"],
         "新品推荐": ["新到", "到货", "新机", "新品", "上新", "推荐", "型号"],
@@ -345,19 +302,16 @@ def _match_scripts(context, scripts):
             best_score = score
             best_tag = tag
 
-    # 找匹配标签的话术
     for s in scripts:
         if s['tag'] == best_tag:
             return s['text']
 
-    # fallback: 返回第一条
     if scripts:
         return scripts[0]['text']
     return None
 
 
 def _call_ai_api(ai_config, context, style):
-    """调用 OpenAI 兼容 API"""
     try:
         import urllib.request
         api_url = ai_config['api_url'].rstrip('/') + '/chat/completions'
@@ -374,7 +328,8 @@ def _call_ai_api(ai_config, context, style):
         payload = json.dumps({
             "model": model,
             "messages": [
-                {"role": "system", "content": f"你是壹准二手手机店的营销文案助手。根据用户提供的内容，生成一段适合微信营销的文案。风格要求：{style_guide.get(style, style_guide['朋友圈'])}。不要强行添加地址或门店信息，除非用户明确要求。"},
+                {"role": "system",
+                 "content": f"你是壹准二手手机店的营销文案助手。根据用户提供的内容，生成一段适合微信营销的文案。风格要求：{style_guide.get(style, style_guide['朋友圈'])}。不要强行添加地址或门店信息，除非用户明确要求。"},
                 {"role": "user", "content": f"根据以下内容生成营销文案：{context}"}
             ],
             "max_tokens": 300,
@@ -462,7 +417,6 @@ def api_delete_script(script_id):
 @app.route('/api/config', methods=['GET'])
 def api_get_config():
     config = load_config()
-    # 密文显示 API Key
     if config['ai'].get('api_key'):
         config['ai']['api_key_masked'] = mask_key(config['ai']['api_key'])
     return jsonify({"success": True, "config": config})
@@ -473,10 +427,9 @@ def api_update_config():
     data = request.json or {}
     config = load_config()
 
-    for section in ['ai', 'fallback', 'watermark', 'broadcast', 'app']:
+    for section in ['ai', 'fallback', 'broadcast', 'app']:
         if section in data:
             section_data = data[section]
-            # 过滤掉 None/空字符串值，避免覆盖已有配置（特别是 api_key）
             cleaned = {k: v for k, v in section_data.items() if v is not None and v != ''}
             config[section].update(cleaned)
 
@@ -490,7 +443,6 @@ def api_update_config():
 
 @app.route('/api/update/check', methods=['GET'])
 def api_check_update():
-    """检查 GitHub Release 是否有新版本"""
     config = load_config()
     current_ver = config['app'].get('version', '1.0.0')
 
@@ -503,7 +455,6 @@ def api_check_update():
             "Accept": "application/vnd.github.v3+json"
         })
 
-        # 创建不验证 SSL 证书的 context（解决某些 Windows 环境的 SSL 问题）
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
@@ -553,7 +504,11 @@ def _compare_versions(v1, v2):
 
 @app.route('/api/health', methods=['GET'])
 def api_health():
-    return jsonify({"status": "ok", "version": "1.0.1"})
+    return jsonify({
+        "status": "ok",
+        "version": "1.1.0",
+        "backend_path": os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__)
+    })
 
 
 # ============================================================
@@ -562,7 +517,7 @@ def api_health():
 
 if __name__ == '__main__':
     print("=" * 50)
-    print("  壹准AI微信营销助手 - 后端服务")
+    print("  壹准AI微信营销助手 - 后端服务 v1.1.0")
     print("  http://localhost:5679")
     print("=" * 50)
     app.run(host='127.0.0.1', port=5679, debug=False)

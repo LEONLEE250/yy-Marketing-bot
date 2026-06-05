@@ -22,7 +22,6 @@
     </div>
     <div class="tabs" id="tabs">
       <button class="tab active" data-tab="0">群发中心</button>
-      <button class="tab" data-tab="1">图片工具</button>
       <button class="tab" data-tab="2">AI 文案</button>
       <button class="tab" data-tab="3">话术库</button>
       <button class="tab" data-tab="4">设置</button>
@@ -31,12 +30,14 @@
 
   <!-- 内容区 -->
   <div class="content" id="content">
+
     <!-- Tab 0: 群发中心 -->
     <div class="panel active" data-panel="0">
       <div class="two-col">
+        <!-- 左栏：图片 + 文案 -->
         <div class="col">
           <div class="card">
-            <div class="card-label">上传图片</div>
+            <div class="card-label">发送图片（可选）</div>
             <div class="upload-zone" id="uploadZone" onclick="selectImage()">
               <div class="upload-icon" id="uploadIcon">+</div>
               <div class="upload-text" id="uploadText">拖拽图片到此处</div>
@@ -45,133 +46,84 @@
             </div>
           </div>
           <div class="card">
-            <div class="card-label">发送文案</div>
-            <div class="pill-group" id="copyPills">
-              <span class="pill active" data-scene="以旧换新">以旧换新</span>
-              <span class="pill" data-scene="新品推荐">新品推荐</span>
-              <span class="pill" data-scene="促销活动">促销活动</span>
-              <span class="pill" data-scene="手动输入">手动输入</span>
-            </div>
-            <textarea class="textarea" id="copyText" placeholder="输入或 AI 生成文案..."></textarea>
+            <div class="card-label">发送内容</div>
+            <textarea class="textarea" id="copyText" placeholder="输入要发送的消息内容..."></textarea>
             <div class="btn-row">
               <span class="api-badge" id="copySourceBadge">就绪</span>
               <button class="btn btn-ghost" onclick="generateCopy()">AI 生成</button>
-              <button class="btn btn-primary" id="confirmCopyBtn">确认文案</button>
+            </div>
+          </div>
+          <div class="card hint-card">
+            <div class="hint-text">
+              <strong>使用说明：</strong><br>
+              1. 确保微信已登录<br>
+              2. 输入收件人微信名称（逗号分隔=群发）<br>
+              3. 可选择上传图片+文字，或纯文字<br>
+              4. 选择「立即发送」或「定时发送」
             </div>
           </div>
         </div>
+
+        <!-- 右栏：收件人 + 发送 -->
         <div class="col">
           <div class="card">
             <div class="card-label">收件人</div>
-            <div class="pill-group" id="recipientMode">
-              <span class="pill active" data-mode="manual">手动选择</span>
-              <span class="pill" data-mode="keyword">关键词筛选</span>
-              <span class="pill" data-mode="all">全部群发</span>
+            <div class="setting-row" style="margin-bottom:8px">
+              <span style="font-size:12px;color:var(--text-secondary)">微信名称/备注，逗号分隔；也可以加载会话列表手动选择</span>
             </div>
-            <div id="keywordInput" class="hidden" style="margin-bottom:10px">
-              <input class="input" placeholder="输入关键词，逗号分隔" id="keywordField" />
+            <textarea class="textarea small" id="manualField" placeholder="输入收件人微信名称，逗号分隔&#10;例如：张三, 李四, 王五"></textarea>
+            <div style="margin-top:8px;display:flex;gap:8px">
+              <button class="btn btn-ghost" style="flex:1" onclick="loadSessions()">加载会话列表</button>
             </div>
-            <div id="manualInput" style="margin-bottom:10px">
-              <input class="input" placeholder="手动输入收件人名称/微信号，逗号分隔" id="manualField" />
-            </div>
-            <div class="recipient-list" id="recipientList">
+            <div class="recipient-list hidden" id="recipientList">
               <div class="empty-state">点击「加载会话」获取微信聊天列表</div>
             </div>
-            <div style="margin-top:10px;display:flex;gap:8px">
-              <button class="btn btn-ghost" style="flex:1" onclick="loadSessions()">加载会话</button>
-            </div>
-            <div class="status-bar" id="statusBar">
+            <div class="status-bar" style="margin-top:8px">
               <div class="status-dot off"></div>
               <span class="status-text" id="statusText">检查微信连接...</span>
             </div>
           </div>
+
+          <!-- 发送方式 -->
+          <div class="card">
+            <div class="card-label">发送方式</div>
+            <div class="pill-group" id="sendModeGroup">
+              <span class="pill active" data-mode="now">立即发送</span>
+              <span class="pill" data-mode="scheduled">定时发送</span>
+            </div>
+            <div id="scheduledPanel" class="hidden" style="margin-top:12px">
+              <div class="setting-row">
+                <span>发送时间</span>
+                <input type="datetime-local" class="input" id="scheduledTime" />
+              </div>
+              <div class="setting-row">
+                <span>发送间隔(秒)</span>
+                <input class="input small" type="number" step="0.1" min="0.3" max="10" value="0.8" id="sendInterval" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 发送按钮 -->
           <div class="card send-card" id="sendCard">
-            <div class="send-card-label">一键发送</div>
-            <div class="send-card-info" id="sendInfo">尚未选择收件人</div>
+            <div class="send-card-label" id="sendLabel">准备发送</div>
+            <div class="send-card-info" id="sendInfo">请输入收件人和内容</div>
             <button class="btn btn-send" id="sendBtn" onclick="doBroadcast()">立即发送</button>
           </div>
-        </div>
-      </div>
-    </div>
 
-    <!-- Tab 1: 图片工具 -->
-    <div class="panel" data-panel="1">
-      <div class="two-col">
-        <div class="col">
-          <div class="card">
-            <div class="card-label">原图</div>
-            <div class="upload-zone small" id="imgToolUpload" onclick="selectImageForTool()">
-              <div class="upload-text">点击上传图片</div>
-              <img id="imgToolPreview" class="image-preview hidden" />
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-label">美化调整</div>
-            <div class="setting-row">
-              <span>亮度</span>
-              <input type="range" min="50" max="150" value="110" class="slider" id="brightness" />
-              <span class="val" id="brightnessVal">110%</span>
-            </div>
-            <div class="setting-row">
-              <span>对比度</span>
-              <input type="range" min="50" max="150" value="115" class="slider" id="contrast" />
-              <span class="val" id="contrastVal">115%</span>
-            </div>
-            <div class="setting-row">
-              <span>饱和度</span>
-              <input type="range" min="50" max="150" value="120" class="slider" id="saturation" />
-              <span class="val" id="saturationVal">120%</span>
-            </div>
-          </div>
-        </div>
-        <div class="col">
-          <div class="card">
-            <div class="card-label">水印设置</div>
-            <div class="setting-row">
-              <span>水印文字</span>
-              <input class="input" value="壹准 · 生生广场4栋11号楼" id="wmText" />
-            </div>
-            <div class="setting-row">
-              <span>位置</span>
-              <select class="select" id="wmPosition">
-                <option value="bottom-right">右下角</option>
-                <option value="bottom-left">左下角</option>
-                <option value="top-right">右上角</option>
-                <option value="top-left">左上角</option>
-                <option value="diagonal">对角线平铺</option>
-              </select>
-            </div>
-            <div class="setting-row">
-              <span>颜色</span>
-              <select class="select" id="wmColor">
-                <option value="auto">自动适配</option>
-                <option value="white">白色</option>
-                <option value="black">黑色</option>
-                <option value="white-trans">白色半透明</option>
-                <option value="black-trans">黑色半透明</option>
-              </select>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-label">文案卡片</div>
-            <textarea class="textarea small" id="cardTextLines" placeholder="每行一条文案&#10;如：iPhone 15 Pro&#10;¥7999"></textarea>
-          </div>
-          <div class="btn-row">
-            <button class="btn btn-primary" onclick="processImage()">处理并预览</button>
-            <button class="btn btn-ghost" onclick="exportImage()">导出图片</button>
-          </div>
-          <div style="margin-top:12px">
-            <img id="processedPreview" class="image-preview hidden" style="max-width:100%;border-radius:8px" />
+          <!-- 定时任务列表 -->
+          <div class="card" id="scheduledTasksCard" style="display:none">
+            <div class="card-label">定时任务</div>
+            <div id="scheduledTasksList"><div class="empty-state">暂无定时任务</div></div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Tab 2: AI 文案 -->
+    <!-- Tab 1: AI 文案 (data-panel="2") -->
     <div class="panel" data-panel="2">
       <div class="card">
         <div class="card-label">场景描述</div>
-        <textarea class="textarea" id="copyContext" placeholder="描述你想推广的内容，如：以旧换新活动，旧手机换新机，门店在生生广场4栋11号楼整栋..."></textarea>
+        <textarea class="textarea" id="copyContext" placeholder="描述你想推广的内容，如：以旧换新活动，旧手机换新机..."></textarea>
         <div class="pill-group" id="stylePills">
           <span class="pill active" data-style="朋友圈">朋友圈风</span>
           <span class="pill" data-style="营销">微信群消息</span>
@@ -197,16 +149,14 @@
       </div>
     </div>
 
-    <!-- Tab 3: 话术库 -->
+    <!-- Tab 2: 话术库 (data-panel="3") -->
     <div class="panel" data-panel="3">
       <div class="card">
         <div class="card-header">
           <div class="card-label" style="margin-bottom:0">内置话术库</div>
           <button class="btn btn-primary btn-sm" onclick="showAddScript()">+ 新增话术</button>
         </div>
-        <div id="scriptsList">
-          <div class="empty-state">加载中...</div>
-        </div>
+        <div id="scriptsList"><div class="empty-state">加载中...</div></div>
         <div id="addScriptForm" class="hidden" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
           <div class="card-label">新增话术</div>
           <div class="input-row" style="margin-bottom:8px">
@@ -231,10 +181,10 @@
           </div>
         </div>
       </div>
-      <div class="section-note">话术库用于无 API Key 时的文案兜底，支持 {变量} 占位符，发送时系统会提示填写变量值。</div>
+      <div class="section-note">话术库用于无 API Key 时的文案兜底，支持 {变量} 占位符。</div>
     </div>
 
-    <!-- Tab 4: 设置 -->
+    <!-- Tab 3: 设置 (data-panel="4") -->
     <div class="panel" data-panel="4">
       <div class="two-col">
         <div class="col">
@@ -257,7 +207,7 @@
             </div>
             <div class="setting-row">
               <div><span class="setting-label">模型</span></div>
-              <input class="input small" type="text" value="gpt-4o-mini" id="aiModel" placeholder="输入模型名称，如 gpt-4o-mini" />
+              <input class="input small" type="text" value="gpt-4o-mini" id="aiModel" placeholder="输入模型名称" />
             </div>
             <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
               <span class="api-badge" id="apiTestBadge">未测试</span>
@@ -281,10 +231,6 @@
           <div class="card">
             <div class="card-label">群发安全</div>
             <div class="setting-row">
-              <div><span class="setting-label">发送间隔（秒）</span></div>
-              <input class="input small" type="number" step="0.1" min="0.3" max="5" value="0.8" id="sendInterval" />
-            </div>
-            <div class="setting-row">
               <div><span class="setting-label">排除名单</span></div>
               <input class="input small" value="微信团队, 文件传输助手" id="excludeList" />
             </div>
@@ -292,7 +238,7 @@
           <div class="card about-card">
             <div class="about-info">
               <div class="about-name">壹准AI微信营销助手</div>
-              <div class="about-version">v1.0.3 · 2026</div>
+              <div class="about-version">v1.1.0 · 2026</div>
             </div>
             <button class="btn btn-ghost btn-sm" onclick="checkUpdate()">检查更新</button>
           </div>
