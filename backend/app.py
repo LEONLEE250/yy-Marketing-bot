@@ -488,13 +488,24 @@ def api_check_update():
 
 
 def _compare_versions(v1, v2):
+    """比较版本号。返回 1（v1更新）、0（相同）、-1（v2更新）。
+    支持 1.2.0 / 1.1.5-preview / 1.0.0-beta 等带后缀的格式。"""
+    def _clean(v):
+        # 去掉 v 前缀和后缀（-preview, -beta, -alpha, -rc 等）
+        v = v.lstrip('v')
+        for sep in ('-', '+', '_'):
+            if sep in v:
+                v = v.split(sep)[0]
+                break
+        return [int(x) for x in v.split('.')]
+
     try:
-        parts1 = [int(x) for x in v1.split('.')]
-        parts2 = [int(x) for x in v2.split('.')]
-        for a, b in zip(parts1, parts2):
+        p1 = _clean(v1)
+        p2 = _clean(v2)
+        for a, b in zip(p1, p2):
             if a > b: return 1
             if a < b: return -1
-        return len(parts1) - len(parts2)
+        return len(p1) - len(p2)
     except Exception:
         return 0
 
