@@ -788,3 +788,80 @@ body {
   color: var(--text-secondary);
   margin-bottom: 12px;
 }
+
+/* ── 任务进度卡 ─────────────────────────────────── */
+.task-progress-card { margin-top: 12px; }
+.task-progress-card .task-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.task-status.running { background: #e8f4fd; color: #0071e3; }
+.task-status.completed { background: #d1f2eb; color: #0d5c37; }
+.task-status.failed { background: #ffe5e5; color: #cc0000; }
+.task-status.cancelled { background: #f0f0f2; color: #86868b; }
+.task-status.pending { background: #fffbf0; color: #b07d00; }
+.task-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.task-step .step-icon {
+  width: 14px; height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.step-icon.done { background: var(--success); color: #fff; }
+.step-icon.current { background: var(--accent); color: #fff; }
+.step-icon.error { background: var(--danger); color: #fff; }
+.step-icon.pending { background: var(--border); color: var(--text-tertiary); }
+
+/* ── 最近日志卡 ─────────────────────────────────── */
+.log-card {
+  max-height: 200px;
+  overflow-y: auto;
+  background: #1d1d1f;
+  color: #e5e5ea;
+  padding: 0;
+  margin-top: 12px;
+  border-radius: var(--radius-sm);
+}
+.log-card .log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background: rgba(255,255,255,0.05);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  font-size: 11px;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+}
+.log-entry {
+  display: flex;
+  gap: 8px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  line-height: 1.4;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.log-time { color: #6e6e7a; flex-shrink: 0; min-width: 72px; }
+.log-level { flex-shrink: 0; min-width: 42px; font-weight: 600; }
+.log-level.info { color: var(--accent); }
+.log-level.warn { color: var(--warning); }
+.log-level.error { color: var(--danger); }
+.log-level.success { color: var(--success); }
+.log-msg { color: #ccc; word-break: break-all; }

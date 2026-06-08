@@ -1,7 +1,7 @@
 {
   "name": "yizhun-wechat-bot",
-  "version": "1.1.4",
-  "description": "壹准AI微信营销助手 - 微信群发 + AI文案 + 定时发送",
+  "version": "1.2.0",
+  "description": "壹准AI微信营销助手 - 微信群发 + AI文案 + 定时发送 + 朋友圈",
   "main": "frontend/main.js",
   "scripts": {
     "start": "electron .",

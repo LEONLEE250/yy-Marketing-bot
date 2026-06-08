@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>壹准AI微信营销助手</title>
+<title>壹准AI微信营销助手 Preview</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -17,7 +17,7 @@
         <button class="win-btn win-min" onclick="window.electronAPI.minimize()"></button>
         <button class="win-btn win-max" onclick="window.electronAPI.maximize()"></button>
       </div>
-      <span class="app-title">壹准AI微信营销助手</span>
+      <span class="app-title">壹准AI微信营销助手 Preview</span>
       <div class="titlebar-spacer"></div>
     </div>
     <div class="tabs" id="tabs">
@@ -175,6 +175,25 @@
         <div class="card-label">发布结果</div>
         <div id="momentResult" style="font-size:13px"></div>
       </div>
+
+      <!-- 任务进度卡 -->
+      <div class="card task-progress-card hidden" id="momentTaskCard">
+        <div class="card-label">执行进度</div>
+        <div id="momentTaskStatus"></div>
+        <div id="momentStepList"></div>
+        <div style="margin-top:8px">
+          <button class="btn btn-ghost btn-sm" id="momentCancelBtn" style="display:none" onclick="cancelMomentTask()">取消任务</button>
+        </div>
+      </div>
+
+      <!-- 最近日志卡 -->
+      <div class="card hidden" id="momentLogCard">
+        <div class="card-label" style="display:flex;justify-content:space-between;align-items:center">
+          <span>最近日志</span>
+          <button class="btn btn-ghost btn-sm" onclick="refreshMomentLogs()" style="font-size:11px">刷新</button>
+        </div>
+        <div class="log-card" id="momentLogList"></div>
+      </div>
     </div>
 
     <!-- Tab 3: AI 文案 (data-panel="2") -->
@@ -295,8 +314,8 @@
           </div>
           <div class="card about-card">
             <div class="about-info">
-              <div class="about-name">壹准AI微信营销助手</div>
-              <div class="about-version">v1.1.4 · 2026</div>
+              <div class="about-name">壹准AI微信营销助手 Preview</div>
+              <div class="about-version">v1.1.5-preview · 2026</div>
             </div>
             <button class="btn btn-ghost btn-sm" onclick="checkUpdate()">检查更新</button>
           </div>

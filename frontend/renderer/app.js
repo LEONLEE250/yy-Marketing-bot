@@ -1,5 +1,5 @@
 /* ============================================================
-   壹准 AI 营销助手 v1.1.4 - 前端逻辑
+   壹准 AI 营销助手 v1.1.5-preview - 前端逻辑
    wxauto4 引擎 + 图片上传 + 会话列表 + 定时发送 + 朋友圈
    ============================================================ */
 
@@ -1020,12 +1020,150 @@ async function generateMomentCopy() {
   } catch (err) { toast('生成失败: ' + err.message); }
 }
 
+// ── 朋友圈任务管理 ─────────────────────────────────
+
+let momentTaskId = null;
+let momentPollTimer = null;
+
+async function cancelMomentTask() {
+  if (!momentTaskId) return;
+  try {
+    const res = await fetch(`${API}/api/moment/tasks/${momentTaskId}/cancel`, { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+      toast('任务已取消');
+      stopMomentPolling();
+      updateMomentTaskUI({ status: 'cancelled' });
+    } else {
+      toast('取消失败: ' + (data.error || ''));
+    }
+  } catch (err) {
+    toast('取消失败: ' + err.message);
+  }
+}
+
+function startMomentPolling(taskId) {
+  momentTaskId = taskId;
+  stopMomentPolling();
+  pollMomentTask();
+  momentPollTimer = setInterval(pollMomentTask, 1500);
+}
+
+function stopMomentPolling() {
+  if (momentPollTimer) { clearInterval(momentPollTimer); momentPollTimer = null; }
+}
+
+async function pollMomentTask() {
+  if (!momentTaskId) return;
+  try {
+    const [taskRes, logRes] = await Promise.allSettled([
+      fetch(`${API}/api/moment/tasks/${momentTaskId}`),
+      fetch(`${API}/api/moment/tasks/${momentTaskId}/logs`)
+    ]);
+
+    if (taskRes.status === 'fulfilled' && taskRes.value.ok) {
+      const taskData = await taskRes.value.json();
+      updateMomentTaskUI(taskData);
+      if (['completed', 'failed', 'cancelled'].includes(taskData.status)) {
+        stopMomentPolling();
+        document.getElementById('momentCancelBtn').style.display = 'none';
+      }
+    }
+
+    if (logRes.status === 'fulfilled' && logRes.value.ok) {
+      const logData = await logRes.value.json();
+      renderMomentLogs(logData.logs || logData.events || []);
+    }
+  } catch (_) {}
+}
+
+function updateMomentTaskUI(task) {
+  const card = document.getElementById('momentTaskCard');
+  card.classList.remove('hidden');
+
+  // status badge
+  const statusTexts = {
+    created: { text: '已创建', cls: 'pending' },
+    pending: { text: '等待中', cls: 'pending' },
+    running: { text: '执行中', cls: 'running' },
+    completed: { text: '已完成', cls: 'completed' },
+    failed: { text: '失败', cls: 'failed' },
+    cancelled: { text: '已取消', cls: 'cancelled' },
+  };
+  const s = statusTexts[task.status] || { text: task.status, cls: 'pending' };
+  document.getElementById('momentTaskStatus').innerHTML = `
+    <span style="font-size:12px;color:var(--text-secondary)">任务 ${task.task_id || momentTaskId}</span>
+    <span class="task-status ${s.cls}" style="margin-left:8px">${s.text}</span>
+    ${task.current_step ? `<span style="margin-left:8px;font-size:11px;color:var(--text-secondary)">步骤: ${escapeHtml(task.current_step)}</span>` : ''}
+  `;
+
+  // steps
+  const steps = task.steps || [];
+  document.getElementById('momentStepList').innerHTML = steps.map(step => {
+    let iconCls = 'pending';
+    if (step.status === 'done') iconCls = 'done';
+    else if (step.status === 'current') iconCls = 'current';
+    else if (step.status === 'error') iconCls = 'error';
+    return `<div class="task-step"><span class="step-icon ${iconCls}">${iconCls === 'done' ? '✓' : iconCls === 'error' ? '✗' : '·'}</span> ${escapeHtml(step.name || step.step)}</div>`;
+  }).join('');
+
+  // cancel button
+  if (['created', 'pending', 'running'].includes(task.status)) {
+    document.getElementById('momentCancelBtn').style.display = '';
+  }
+
+  // if completed/failed, show result summary
+  const resultCard = document.getElementById('momentResultCard');
+  const result = document.getElementById('momentResult');
+  if (task.status === 'completed') {
+    resultCard.classList.remove('hidden');
+    result.innerHTML = '<span style="color:#34c759">发布成功</span>';
+  } else if (task.status === 'failed') {
+    resultCard.classList.remove('hidden');
+    result.innerHTML = `<span style="color:#ff3b30">失败</span><br>${escapeHtml(task.error || task.reason || '未知错误')}`;
+  }
+
+  // show log card
+  document.getElementById('momentLogCard').classList.remove('hidden');
+}
+
+function renderMomentLogs(logs) {
+  if (!logs || !logs.length) return;
+  const list = document.getElementById('momentLogList');
+  list.innerHTML = logs.slice(0, 100).map(l => {
+    const lvl = (l.level || 'info').toLowerCase();
+    const time = (l.timestamp || l.time || '').slice(-8) || '';
+    const msg = l.message || l.msg || JSON.stringify(l);
+    return `<div class="log-entry">
+      <span class="log-time">${escapeHtml(time)}</span>
+      <span class="log-level ${lvl}">${escapeHtml(lvl)}</span>
+      <span class="log-msg">${escapeHtml(msg)}</span>
+    </div>`;
+  }).join('');
+}
+
+async function refreshMomentLogs() {
+  if (!momentTaskId) return toast('没有活跃任务');
+  try {
+    const res = await fetch(`${API}/api/moment/tasks/${momentTaskId}/logs`);
+    const data = await res.json();
+    renderMomentLogs(data.logs || data.events || []);
+  } catch (_) {}
+}
+
+// ── 发布朋友圈 (task 驱动版) ────────────────────────
+
 async function publishMoment() {
   const text = document.getElementById('momentText').value.trim();
   if (!text && !momentState.mediaPath) return toast('请至少输入文字或上传图片/视频');
   if (text.length > 2000) return toast('文字不能超过2000字');
-  if (momentState.mediaType === 'video' && momentState.mediaPath && !/\.[mp4|mov|avi|wmv|mkv|flv|m4v|webm]$/i.test(momentState.mediaPath))
-    return toast('视频格式暂不支持');
+
+  // 修复视频扩展名校验
+  if (momentState.mediaType === 'video' && momentState.mediaPath) {
+    const validExts = /\.(mp4|mov|avi|wmv|mkv|flv|m4v|webm)$/i;
+    if (!validExts.test(momentState.mediaPath))
+      return toast('视频格式暂不支持，仅支持 mp4/mov/avi/wmv/mkv/flv/m4v/webm');
+  }
 
   const btn = document.getElementById('momentPublishBtn');
   const orig = btn.textContent;
@@ -1033,38 +1171,49 @@ async function publishMoment() {
 
   const isScheduled = momentState.sendMode === 'scheduled';
   const scheduledAt = isScheduled ? document.getElementById('momentScheduledTime')?.value : null;
-
   if (isScheduled && !scheduledAt) { btn.textContent = orig; btn.disabled = false; return toast('请选择定时时间'); }
 
   try {
     const res = await fetch(`${API}/api/moment/publish`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, media_path: momentState.mediaPath || null, scheduled_at: scheduledAt || null })
+      body: JSON.stringify({
+        text,
+        media_path: momentState.mediaPath || null,
+        scheduled_at: scheduledAt || null
+      })
     });
     const data = await res.json();
 
-    const card = document.getElementById('momentResultCard');
-    const result = document.getElementById('momentResult');
-    card.classList.remove('hidden');
-
-    if (data.success) {
+    if (data.task_id) {
+      // 任务模式 — 开始轮询
+      toast(isScheduled ? '定时任务已创建' : '任务已创建，开始执行');
+      startMomentPolling(data.task_id);
       if (isScheduled) {
-        result.innerHTML = `<span style="color:#0071e3">定时任务已创建</span><br>将于 ${scheduledAt.replace('T',' ')} 自动发布`;
-        toast('定时任务已创建');
+        updateMomentTaskUI({ status: 'pending', task_id: data.task_id, scheduled_at: scheduledAt });
       } else {
-        result.innerHTML = '<span style="color:#34c759">发布成功</span>';
-        toast('发布成功');
+        updateMomentTaskUI({ status: 'running', task_id: data.task_id });
+      }
+    } else if (data.success) {
+      // 旧版直接返回
+      const card = document.getElementById('momentResultCard');
+      card.classList.remove('hidden');
+      document.getElementById('momentResult').innerHTML = isScheduled
+        ? `<span style="color:#0071e3">定时任务已创建</span><br>将于 ${scheduledAt.replace('T',' ')} 自动发布`
+        : '<span style="color:#34c759">发布成功</span>';
+      toast(isScheduled ? '定时任务已创建' : '发布成功');
+      if (!isScheduled) {
         document.getElementById('momentText').value = '';
         document.getElementById('momentCharCount').textContent = '0';
         clearMomentMedia();
       }
     } else {
-      result.innerHTML = `<span style="color:#ff3b30">失败</span><br>${data.error || '未知错误'}`;
+      const card = document.getElementById('momentResultCard');
+      card.classList.remove('hidden');
+      document.getElementById('momentResult').innerHTML = `<span style="color:#ff3b30">失败</span><br>${data.error || '未知错误'}`;
       toast('失败: ' + (data.error || '未知错误'));
     }
   } catch (err) {
-    const card = document.getElementById('momentResultCard');
-    card.classList.remove('hidden');
+    document.getElementById('momentResultCard').classList.remove('hidden');
     document.getElementById('momentResult').innerHTML = `<span style="color:#ff3b30">失败</span><br>${err.message}`;
     toast('失败: ' + err.message);
   } finally {

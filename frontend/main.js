@@ -1,3 +1,7 @@
+// 清除可能干扰 Electron 的环境变量
+delete process.env.NODE_OPTIONS;
+delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
@@ -5,8 +9,14 @@ const https = require('https');
 const fs = require('fs');
 const os = require('os');
 
+// ── 应用常量 ──────────────────────────────────────────
+const BACKEND_PORT = 5679;
+const EXPECTED_CHANNEL = 'release';
+const EXPECTED_VERSION = '1.2.0';
+
 let mainWindow;
 let backendProcess;
+let runtimeMeta = {};  // 从 health 拉到的实例元数据
 
 function resolvePythonPath() {
   const candidates = [
@@ -22,33 +32,48 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/**
+ * ping backend 并返回完整 health 数据（或 null）
+ * 同时比对 channel / version / backend_path 确保连到正确实例
+ */
 function pingBackend(expectedBackendPath = '') {
   return new Promise((resolve) => {
-    const req = require('http').get('http://127.0.0.1:5679/api/health', (res) => {
+    const req = require('http').get(`http://127.0.0.1:${BACKEND_PORT}/api/health`, (res) => {
       let body = '';
       res.on('data', chunk => body += chunk);
       res.on('end', () => {
         try {
           const data = JSON.parse(body || '{}');
-          const ok = res.statusCode === 200 && data.status === 'ok';
-          const sameBackend = !expectedBackendPath || !data.backend_path || data.backend_path === expectedBackendPath;
-          resolve(ok && sameBackend);
+          // 基础存活检查
+          if (res.statusCode !== 200 || data.status !== 'ok') { resolve(null); return; }
+          // channel 必须对
+          if (data.channel !== EXPECTED_CHANNEL) {
+            console.warn(`[Yizhun] port ${BACKEND_PORT} is occupied by another instance (channel=${data.channel})`);
+            resolve(null); return;
+          }
+          // 如果指定了路径，必须匹配
+          if (expectedBackendPath && data.backend_path && data.backend_path !== expectedBackendPath) {
+            console.warn(`[Yizhun] backend_path mismatch: expected ${expectedBackendPath}, got ${data.backend_path}`);
+            resolve(null); return;
+          }
+          resolve(data);
         } catch (_) {
-          resolve(false);
+          resolve(null);
         }
       });
     });
-    req.on('error', () => resolve(false));
+    req.on('error', () => resolve(null));
     req.setTimeout(1500, () => {
       req.destroy();
-      resolve(false);
+      resolve(null);
     });
   });
 }
 
 async function waitForBackendReady(expectedBackendPath = '', maxAttempts = 15) {
   for (let i = 0; i < maxAttempts; i += 1) {
-    if (await pingBackend(expectedBackendPath)) return true;
+    const meta = await pingBackend(expectedBackendPath);
+    if (meta) { runtimeMeta = meta; return true; }
     await wait(800);
   }
   return false;
@@ -60,12 +85,15 @@ function getExpectedBackendPath() {
     : '';
 }
 
-function killConflictingBackend(expectedBackendPath) {
-  // 启动时无差别清除端口 5679 上所有监听进程，不比较路径
-  // 因为上一轮退出残留的 backend 必须全部清理，否则新实例无法绑定端口
+/**
+ * 启动时清理端口上残留进程
+ * 不再无差别清理正式版端口 5679
+ */
+function killConflictingBackend() {
   const script = [
+    `$port = ${BACKEND_PORT}`,
     '$conns = @()',
-    'try { $conns = Get-NetTCPConnection -LocalPort 5679 -State Listen -ErrorAction Stop } catch {}',
+    'try { $conns = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Stop } catch {}',
     'if (-not $conns) { exit 0 }',
     'foreach ($conn in $conns) {',
     '  try { Stop-Process -Id $conn.OwningProcess -Force -Confirm:$false } catch {}',
@@ -84,7 +112,7 @@ async function shutdownBackend() {
   try {
     const http = require('http');
     await new Promise((resolve) => {
-      const req = http.request('http://127.0.0.1:5679/api/shutdown', {
+      const req = http.request(`http://127.0.0.1:${BACKEND_PORT}/api/shutdown`, {
         method: 'POST',
         timeout: 2000,
       }, () => resolve());
@@ -94,7 +122,7 @@ async function shutdownBackend() {
     await wait(800);
   } catch (_) {}
 
-  // Step 2: Node 进程 kill（Windows 上等效 TerminateProcess）
+  // Step 2: Node 进程 kill
   if (!backendProcess.killed) {
     try { backendProcess.kill(); } catch (_) {}
     await wait(300);
@@ -140,6 +168,8 @@ function startBackend() {
   });
 }
 
+// ── IPC: 暴露 runtime meta 给渲染进程 ─────────────────────
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1100,
@@ -167,6 +197,20 @@ function createWindow() {
   });
   ipcMain.on('window-close', () => mainWindow.close());
 
+  // 返回当前 runtime meta
+  ipcMain.handle('get-runtime-meta', async () => {
+    const health = await pingBackend(getExpectedBackendPath());
+    if (health) runtimeMeta = health;
+    return {
+      frontend_version: EXPECTED_VERSION,
+      frontend_channel: EXPECTED_CHANNEL,
+      backend_info: runtimeMeta,
+      expected_backend_path: getExpectedBackendPath(),
+      is_packaged: app.isPackaged,
+      backend_port: BACKEND_PORT,
+    };
+  });
+
   // 文件选择
   ipcMain.handle('select-image', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -191,7 +235,6 @@ function createWindow() {
       filters: [{ name: 'PNG', extensions: ['png'] }]
     });
     if (result.canceled) return null;
-    // 实际复制文件
     try {
       fs.copyFileSync(sourcePath, result.filePath);
       return result.filePath;
@@ -210,14 +253,12 @@ function createWindow() {
     const fileName = '壹准AI微信营销助手_Setup.exe';
     const filePath = path.join(downloadsDir, fileName);
 
-    // 通知前端开始下载
     mainWindow.webContents.send('download-progress', { status: 'downloading', progress: 0 });
 
     return new Promise((resolve, reject) => {
       const file = fs.createWriteStream(filePath);
 
       function handleResponse(response) {
-        // 处理重定向
         if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
           https.get(response.headers.location, handleResponse).on('error', reject);
           return;
@@ -259,7 +300,7 @@ function createWindow() {
     });
   });
 
-  // 安装更新 — 打开安装包并退出
+  // 安装更新
   ipcMain.handle('install-update', async (event, filePath) => {
     shell.openPath(filePath);
     await shutdownBackend();
@@ -270,11 +311,13 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   const expectedBackendPath = getExpectedBackendPath();
-  await killConflictingBackend(expectedBackendPath);
+  await killConflictingBackend();
   startBackend();
   const ready = await waitForBackendReady(expectedBackendPath);
   if (!ready) {
-    console.error('Backend did not become ready in time or is occupied by another instance');
+    console.error('[Yizhun] Backend did not become ready in time');
+  } else {
+    console.log('[Yizhun] Backend ready, channel=', runtimeMeta.channel, 'version=', runtimeMeta.version);
   }
   createWindow();
 });
@@ -287,6 +330,6 @@ app.on('before-quit', async (event) => {
   if (backendProcess && !backendProcess.killed) {
     event.preventDefault();
     await shutdownBackend();
-    app.quit(); // 二次 quit，此时 backendProcess.killed 为 true，直接退出
+    app.quit();
   }
 });

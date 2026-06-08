@@ -11,4 +11,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadUpdate: (url) => ipcRenderer.invoke('download-update', url),
   installUpdate: (filePath) => ipcRenderer.invoke('install-update', filePath),
   onDownloadProgress: (callback) => ipcRenderer.on('download-progress', (event, data) => callback(data)),
+  getRuntimeMeta: () => ipcRenderer.invoke('get-runtime-meta'),
 });

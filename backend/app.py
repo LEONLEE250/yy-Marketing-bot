@@ -1,5 +1,5 @@
 """
-壹准 AI 营销助手 - Flask 后端 API v1.1.4
+壹准 AI 营销助手 - Flask 后端 API v1.2.0
 端口 5679
 """
 
@@ -23,14 +23,18 @@ for _p in [_DEV_WXAUTO, _PROJECT_WXAUTO, _PKG_WXAUTO]:
 app = Flask(__name__)
 CORS(app)
 
+# ── 应用标识 ──────────────────────────────────────────
+APP_VERSION = "1.2.0"
+APP_CHANNEL = "release"
+APP_PORT = 5679
+APP_STARTED_AT = time.time()
+APP_INSTANCE_ID = f"v1.2.0-{int(APP_STARTED_AT)}-{os.getpid()}"
+
 # ============================================================
 # 配置管理
 # ============================================================
 
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
-
-# 应用版本号（单一来源，所有接口统一引用）
-APP_VERSION = "1.1.4"
 os.makedirs(CONFIG_DIR, exist_ok=True)
 CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
 SCRIPTS_FILE = os.path.join(CONFIG_DIR, 'scripts.json')
@@ -61,12 +65,7 @@ DEFAULT_CONFIG = {
     }
 }
 
-DEFAULT_SCRIPTS = [
-    {"id": "s1", "tag": "以旧换新", "text": "旧机换新机，折旧抵扣！现在来壹准，旧手机最高抵{金额}元。地址：生生广场4栋11号楼整栋"},
-    {"id": "s2", "tag": "新品推荐", "text": "最新款{型号}到货！{亮点}，价格实惠，来壹准看看吧，生生广场4栋11号楼"},
-    {"id": "s3", "tag": "促销活动", "text": "限时优惠！{活动名}进行中，{优惠内容}，今天来壹准抢先体验，名额有限！"},
-    {"id": "s4", "tag": "品牌宣传", "text": "壹准 — 生生广场专业手机回收、保卖、竞拍平台，诚信经营，欢迎来访！"},
-]
+DEFAULT_SCRIPTS = []
 
 
 def load_config():
@@ -506,10 +505,67 @@ def _compare_versions(v1, v2):
 
 @app.route('/api/health', methods=['GET'])
 def api_health():
+    """健康检查 + 实例自检信息"""
+    is_frozen = getattr(sys, 'frozen', False)
+    backend_path = os.path.abspath(sys.executable if is_frozen else __file__)
+    runtime_dir = os.path.dirname(backend_path) if is_frozen else os.path.dirname(os.path.abspath(__file__))
     return jsonify({
         "status": "ok",
+        "channel": APP_CHANNEL,
         "version": APP_VERSION,
-        "backend_path": os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__)
+        "backend_path": backend_path,
+        "runtime_dir": runtime_dir,
+        "cwd": os.getcwd(),
+        "config_dir": os.path.abspath(CONFIG_DIR),
+        "log_dir": os.path.abspath(os.path.join(CONFIG_DIR, 'logs')),
+        "pid": os.getpid(),
+        "port": APP_PORT,
+        "instance_id": APP_INSTANCE_ID,
+        "started_at_ts": APP_STARTED_AT,
+        "packaged": is_frozen,
+        "capabilities": {
+            "moment_publish": True,
+            "moment_schedule": True,
+            "moment_cancel": True,
+            "moment_logs": True,
+            "broadcast": True,
+            "ai_copy": True,
+        }
+    })
+
+
+@app.route('/api/runtime/diagnostics', methods=['GET'])
+def api_diagnostics():
+    """完整运行时诊断信息"""
+    is_frozen = getattr(sys, 'frozen', False)
+    backend_path = os.path.abspath(sys.executable if is_frozen else __file__)
+    runtime_dir = os.path.dirname(backend_path) if is_frozen else os.path.dirname(os.path.abspath(__file__))
+
+    moment_module_path = ''
+    try:
+        import wechat_moment_v2
+        moment_module_path = os.path.abspath(wechat_moment_v2.__file__) if hasattr(wechat_moment_v2, '__file__') else '(built-in)'
+    except Exception:
+        moment_module_path = '(not loaded)'
+
+    registered_routes = sorted([rule.rule for rule in app.url_map.iter_rules() if rule.rule.startswith('/api/')])
+
+    return jsonify({
+        "app_version": APP_VERSION,
+        "channel": APP_CHANNEL,
+        "backend_path": backend_path,
+        "runtime_dir": runtime_dir,
+        "config_dir": os.path.abspath(CONFIG_DIR),
+        "log_dir": os.path.abspath(os.path.join(CONFIG_DIR, 'logs')),
+        "pid": os.getpid(),
+        "port": APP_PORT,
+        "instance_id": APP_INSTANCE_ID,
+        "started_at_ts": APP_STARTED_AT,
+        "packaged": is_frozen,
+        "moment_module_path": moment_module_path,
+        "registered_routes": registered_routes,
+        "python_version": sys.version,
+        "cwd": os.getcwd(),
     })
 
 
@@ -584,6 +640,50 @@ def api_cancel_moment(task_id):
         return jsonify({"success": False, "error": str(e)})
 
 
+# ── 朋友圈任务管理 ──────────────────
+
+@app.route('/api/moment/tasks', methods=['GET'])
+def api_list_moment_tasks():
+    """列出所有朋友圈任务"""
+    try:
+        from wechat_moment_v2 import get_tasks
+        status = request.args.get('status')
+        return jsonify(get_tasks(status))
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/moment/tasks/<task_id>', methods=['GET'])
+def api_get_moment_task(task_id):
+    """获取单个任务详情"""
+    try:
+        from wechat_moment_v2 import get_task
+        return jsonify(get_task(task_id))
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/moment/tasks/<task_id>/logs', methods=['GET'])
+def api_get_moment_task_logs(task_id):
+    """获取任务事件日志"""
+    try:
+        from wechat_moment_v2 import get_task_logs
+        limit = request.args.get('limit', 100, type=int)
+        return jsonify(get_task_logs(task_id, limit))
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+@app.route('/api/moment/tasks/<task_id>/cancel', methods=['POST'])
+def api_cancel_moment_task(task_id):
+    """取消任务（支持 pending / running 状态）"""
+    try:
+        from wechat_moment_v2 import cancel_scheduled
+        return jsonify(cancel_scheduled(task_id))
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
 # ============================================================
 # 启动
 # ============================================================
@@ -591,6 +691,7 @@ def api_cancel_moment(task_id):
 if __name__ == '__main__':
     print("=" * 50)
     print(f"  壹准AI微信营销助手 - 后端服务 v{APP_VERSION}")
-    print("  http://localhost:5679")
+    print(f"  http://localhost:{APP_PORT}")
+    print(f"  channel: {APP_CHANNEL}")
     print("=" * 50)
-    app.run(host='127.0.0.1', port=5679, debug=False)
+    app.run(host='127.0.0.1', port=APP_PORT, debug=False)
