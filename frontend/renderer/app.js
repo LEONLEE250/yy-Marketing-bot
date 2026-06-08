@@ -3,7 +3,7 @@
    wxauto4 引擎 + 图片上传 + 会话列表 + 定时发送 + 朋友圈
    ============================================================ */
 
-const API = 'http://127.0.0.1:5679';
+const API = 'http://127.0.0.1:5680';
 
 let state = {
   currentTab: 0,
@@ -1020,12 +1020,6 @@ async function generateMomentCopy() {
   } catch (err) { toast('生成失败: ' + err.message); }
 }
 
-// ── 朋友圈任务管理 ─────────────────────────────────
-
-let momentTaskId = null;
-let momentPollTimer = null;
-
-async function cancelMomentTask() {
   if (!momentTaskId) return;
   try {
     const res = await fetch(`${API}/api/moment/tasks/${momentTaskId}/cancel`, { method: 'POST' });

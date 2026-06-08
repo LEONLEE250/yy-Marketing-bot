@@ -1,7 +1,7 @@
 {
   "name": "yizhun-wechat-bot",
   "version": "1.2.0",
-  "description": "壹准AI微信营销助手 - 微信群发 + AI文案 + 定时发送 + 朋友圈",
+  "description": "壹准AI微信营销助手 Preview - 微信群发 + AI文案 + 定时发送 + 朋友圈",
   "main": "frontend/main.js",
   "scripts": {
     "start": "electron .",
@@ -15,8 +15,8 @@
     "electron-builder": "^24.9.0"
   },
   "build": {
-    "appId": "com.yizhun.wechat-bot",
-    "productName": "壹准AI微信营销助手",
+    "appId": "com.yizhun.wechat-bot.preview",
+    "productName": "壹准AI微信营销助手 Preview",
     "directories": {
       "output": "build"
     },

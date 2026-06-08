@@ -321,15 +321,9 @@ def _select_file_in_dialog(file_path: str):
     _log(f'[select_file] target path: {path}')
     time.sleep(1.0)
 
-    # 等文件对话框出现（最多等 6 秒）
-    dialog = None
-    for _ in range(12):
-        dialog = _find_file_dialog()
-        if dialog:
-            break
-        time.sleep(0.5)
+    dialog = _find_file_dialog()
     if not dialog:
-        raise RuntimeError('未检测到文件选择对话框，请确认微信已弹出文件选择窗口')
+        raise RuntimeError('未检测到文件选择对话框')
 
     # Step 1: 进入目标目录（地址栏）
     _focus_file_dialog(dialog)
@@ -433,17 +427,13 @@ def _click_media_source_menu():
     点「从手机相册选择」（会打开系统文件对话框）。
     """
     time.sleep(0.8)
-    # 先尝试 UIA 查找（覆盖多种微信版本菜单名）
+    # 先尝试 UIA 查找
     btn = (_find_any_uia(Name="从手机相册选择")
            or _find_any_uia(Name="从手机相册")
            or _find_any_uia(Name="手机相册")
            or _find_any_uia(Name="从电脑文件选择")
            or _find_any_uia(Name="从电脑选择")
-           or _find_any_uia(Name="从文件选择")
-           or _find_any_uia(Name="本地文件")
-           or _find_any_uia(Name="相册")
-           or _find_any_uia(Name="Album")
-           or _find_any_uia(Name="From File"))
+           or _find_any_uia(Name="本地文件"))
     if btn:
         _log('[media_menu] UIA found: ' + (btn.Name if hasattr(btn, 'Name') else 'unknown'))
         try:
@@ -453,25 +443,15 @@ def _click_media_source_menu():
         except Exception as e:
             _log(f'[media_menu] UIA click failed: {e}')
 
-    # UIA 找不到，用 pyautogui 键盘兜底
-    _log('[media_menu] UIA not found, trying pyautogui keyboard')
-    # 尝试多组组合：某些微信版本「从文件选择」是第2项，某些是第1项
-    for _try in range(2):
-        for combo in (
-            [('down',), ('enter',)],
-            [('down',), ('down',), ('enter',)],
-            [('up',), ('enter',)],
-        ):
-            for key in combo:
-                pyautogui.press(*key) if isinstance(key, tuple) else pyautogui.press(key)
-                time.sleep(0.3)
-            time.sleep(1.0)
-            # 检查文件对话框是否弹出了
-            if _find_file_dialog():
-                _log('[media_menu] dialog opened via keyboard fallback')
-                return
-    _log('[media_menu] all fallbacks exhausted, proceeding anyway')
-    time.sleep(0.5)
+    # UIA 找不到，用 pyautogui 点击菜单中的第一个或第二个选项
+    # 通常「从手机相册选择」在菜单上方，「拍摄」在最上面
+    import win32gui
+    _log('[media_menu] trying pyautogui click at screen center')
+    # 在屏幕中央周围搜索（微信菜单通常在微信窗口中间偏下）
+    pyautogui.press('down')  # 跳过「拍摄」，选「从手机相册选择」
+    time.sleep(0.3)
+    pyautogui.press('enter')
+    time.sleep(1.0)
 
 
 def _click_publish(win: dict):

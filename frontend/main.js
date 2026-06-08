@@ -9,10 +9,10 @@ const https = require('https');
 const fs = require('fs');
 const os = require('os');
 
-// ── 应用常量 ──────────────────────────────────────────
-const BACKEND_PORT = 5679;
-const EXPECTED_CHANNEL = 'release';
-const EXPECTED_VERSION = '1.2.0';
+// ── Preview 常量 ──────────────────────────────────────────
+const BACKEND_PORT = 5680;
+const EXPECTED_CHANNEL = 'preview';
+const EXPECTED_VERSION = '1.1.5-preview';
 
 let mainWindow;
 let backendProcess;
@@ -34,7 +34,7 @@ function wait(ms) {
 
 /**
  * ping backend 并返回完整 health 数据（或 null）
- * 同时比对 channel / version / backend_path 确保连到正确实例
+ * 同时比对 channel / version / backend_path 确保连到 Preview 实例
  */
 function pingBackend(expectedBackendPath = '') {
   return new Promise((resolve) => {
@@ -48,12 +48,12 @@ function pingBackend(expectedBackendPath = '') {
           if (res.statusCode !== 200 || data.status !== 'ok') { resolve(null); return; }
           // channel 必须对
           if (data.channel !== EXPECTED_CHANNEL) {
-            console.warn(`[Yizhun] port ${BACKEND_PORT} is occupied by another instance (channel=${data.channel})`);
+            console.warn(`[Preview] port ${BACKEND_PORT} is occupied by non-preview instance (channel=${data.channel})`);
             resolve(null); return;
           }
           // 如果指定了路径，必须匹配
           if (expectedBackendPath && data.backend_path && data.backend_path !== expectedBackendPath) {
-            console.warn(`[Yizhun] backend_path mismatch: expected ${expectedBackendPath}, got ${data.backend_path}`);
+            console.warn(`[Preview] backend_path mismatch: expected ${expectedBackendPath}, got ${data.backend_path}`);
             resolve(null); return;
           }
           resolve(data);
@@ -86,7 +86,7 @@ function getExpectedBackendPath() {
 }
 
 /**
- * 启动时清理端口上残留进程
+ * 启动时只清理 Preview 端口（5680）上非 Preview 实例的残留进程
  * 不再无差别清理正式版端口 5679
  */
 function killConflictingBackend() {
@@ -177,7 +177,7 @@ function createWindow() {
     minWidth: 860,
     minHeight: 600,
     frame: false,
-    title: '壹准AI微信营销助手',
+    title: '壹准AI微信营销助手 Preview',
     titleBarStyle: 'hidden',
     backgroundColor: '#f5f5f7',
     webPreferences: {
@@ -250,7 +250,7 @@ function createWindow() {
   // 下载更新包
   ipcMain.handle('download-update', async (event, downloadUrl) => {
     const downloadsDir = app.getPath('downloads');
-    const fileName = '壹准AI微信营销助手_Setup.exe';
+    const fileName = '壹准AI微信营销助手_Preview_Setup.exe';
     const filePath = path.join(downloadsDir, fileName);
 
     mainWindow.webContents.send('download-progress', { status: 'downloading', progress: 0 });
@@ -315,9 +315,9 @@ app.whenReady().then(async () => {
   startBackend();
   const ready = await waitForBackendReady(expectedBackendPath);
   if (!ready) {
-    console.error('[Yizhun] Backend did not become ready in time');
+    console.error('[Preview] Backend did not become ready in time');
   } else {
-    console.log('[Yizhun] Backend ready, channel=', runtimeMeta.channel, 'version=', runtimeMeta.version);
+    console.log('[Preview] Backend ready, channel=', runtimeMeta.channel, 'version=', runtimeMeta.version);
   }
   createWindow();
 });

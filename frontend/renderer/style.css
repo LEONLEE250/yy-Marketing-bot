@@ -789,6 +789,39 @@ body {
   margin-bottom: 12px;
 }
 
+/* ── 实例诊断卡 ─────────────────────────────────── */
+.diag-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+.diag-card.warning {
+  border-color: var(--danger);
+  background: #fff5f5;
+}
+.diag-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.diag-key { color: var(--text-secondary); flex-shrink: 0; }
+.diag-val { color: var(--text-primary); text-align: right; word-break: break-all; font-family: var(--font-mono); font-size: 11px; }
+.diag-val.ok { color: var(--success); }
+.diag-val.mismatch { color: var(--danger); font-weight: 600; }
+.diag-val.warn { color: var(--warning); }
+.diag-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.diag-badge.preview { background: #0071e3; color: #fff; }
+.diag-badge.release { background: var(--text-tertiary); color: #fff; }
+.diag-badge.ok { background: var(--success); color: #fff; }
+.diag-badge.fail { background: var(--danger); color: #fff; }
+
 /* ── 任务进度卡 ─────────────────────────────────── */
 .task-progress-card { margin-top: 12px; }
 .task-progress-card .task-status {

@@ -1,6 +1,6 @@
 """
-壹准 AI 营销助手 - Flask 后端 API v1.2.0
-端口 5679
+壹准 AI 营销助手 - Flask 后端 API v1.1.5-preview
+端口 5680 (preview channel)
 """
 
 import sys
@@ -16,25 +16,36 @@ _DEV_WXAUTO = os.path.abspath(os.path.join(_BASE_DIR, '..', '..', 'wechat-wxauto
 _PROJECT_WXAUTO = os.path.abspath(os.path.join(_BASE_DIR, '..', 'wechat-wxauto'))
 _EXE_DIR = os.path.dirname(os.path.abspath(sys.executable))
 _PKG_WXAUTO = os.path.abspath(os.path.join(_EXE_DIR, '..', 'wechat-wxauto'))
-for _p in [_DEV_WXAUTO, _PROJECT_WXAUTO, _PKG_WXAUTO]:
     if os.path.isdir(_p) and _p not in sys.path:
         sys.path.insert(0, _p)
 
 app = Flask(__name__)
 CORS(app)
 
-# ── 应用标识 ──────────────────────────────────────────
-APP_VERSION = "1.2.0"
-APP_CHANNEL = "release"
-APP_PORT = 5679
+# ── Preview 标识 ──────────────────────────────────────────
+APP_VERSION = "1.1.5-preview"
+APP_CHANNEL = "preview"
+APP_PORT = 5680
 APP_STARTED_AT = time.time()
-APP_INSTANCE_ID = f"v1.2.0-{int(APP_STARTED_AT)}-{os.getpid()}"
+APP_INSTANCE_ID = f"preview-{int(APP_STARTED_AT)}-{os.getpid()}"
 
 # ============================================================
 # 配置管理
 # ============================================================
 
-CONFIG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+# Preview 使用独立数据目录，不污染正式版
+# 打包 (frozen) 模式：持久化到 %APPDATA%，避免每次重启丢失配置
+# 开发模式：本地 data_preview/ 目录
+_PREVIEW_DATA_ROOT = os.environ.get('YIZHUN_PREVIEW_DATA_DIR', '')
+if not _PREVIEW_DATA_ROOT:
+    if getattr(sys, 'frozen', False):
+        _PREVIEW_DATA_ROOT = os.path.join(
+            os.environ.get('APPDATA', os.path.expanduser('~')),
+            'yizhun-wechat-bot-preview'
+        )
+    else:
+        _PREVIEW_DATA_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data_preview')
+CONFIG_DIR = _PREVIEW_DATA_ROOT
 os.makedirs(CONFIG_DIR, exist_ok=True)
 CONFIG_FILE = os.path.join(CONFIG_DIR, 'config.json')
 SCRIPTS_FILE = os.path.join(CONFIG_DIR, 'scripts.json')
@@ -57,7 +68,6 @@ DEFAULT_CONFIG = {
     },
     "broadcast": {
         "interval": 0.8,
-        "exclude": ["微信团队", "文件传输助手"]
     },
     "app": {
         "version": APP_VERSION,
@@ -65,7 +75,6 @@ DEFAULT_CONFIG = {
     }
 }
 
-DEFAULT_SCRIPTS = []
 
 
 def load_config():
@@ -97,14 +106,12 @@ def save_scripts(scripts):
 def mask_key(key):
     if not key:
         return ""
-    return key[:3] + "\u2022" * 12 + key[-4:] if len(key) > 7 else "\u2022" * 8
 
 
 # ============================================================
 # 状态检查
 # ============================================================
 
-@app.route('/api/status', methods=['GET'])
 def api_status():
     try:
         from wxauto_service import check_status
@@ -126,7 +133,6 @@ def api_status():
 # 会话管理
 # ============================================================
 
-@app.route('/api/sessions', methods=['GET'])
 def api_sessions():
     try:
         from wxauto_service import get_sessions
@@ -136,10 +142,8 @@ def api_sessions():
         return jsonify({"success": False, "error": str(e)})
 
 
-@app.route('/api/sessions/match', methods=['POST'])
 def api_match_sessions():
     data = request.json or {}
-    keywords = data.get('keywords', [])
     try:
         from wxauto_service import match_sessions
         result = match_sessions(keywords)
@@ -152,11 +156,9 @@ def api_match_sessions():
 # 图片上传
 # ============================================================
 
-@app.route('/api/image/upload', methods=['POST'])
 def api_upload_image():
     if 'file' not in request.files:
         return jsonify({"success": False, "error": "No file provided"})
-    file = request.files['file']
     if file.filename == '':
         return jsonify({"success": False, "error": "Empty filename"})
     filename = f"{int(time.time())}_{file.filename}"
@@ -165,7 +167,6 @@ def api_upload_image():
     return jsonify({"success": True, "path": filepath, "filename": filename})
 
 
-@app.route('/api/image/output/<filename>', methods=['GET'])
 def api_get_image(filename):
     filepath = os.path.join(OUTPUT_DIR, filename)
     if os.path.exists(filepath):
@@ -177,11 +178,9 @@ def api_get_image(filename):
 # 群发
 # ============================================================
 
-@app.route('/api/broadcast', methods=['POST'])
 def api_broadcast():
     """统一群发入口 — 支持纯文本/图文"""
     data = request.json or {}
-    targets = data.get('targets', [])
     message = data.get('message', '')
     image_path = data.get('image_path')
     interval = data.get('interval', 0.8)
@@ -203,7 +202,6 @@ def api_broadcast():
         else:
             result = broadcast_text(targets, message, interval, prefer_manual=prefer_manual)
 
-        result['send_mode'] = send_mode
         return jsonify(result)
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
@@ -213,11 +211,9 @@ def api_broadcast():
 # 定时发送
 # ============================================================
 
-@app.route('/api/broadcast/schedule', methods=['POST'])
 def api_schedule_broadcast():
     """创建定时群发任务"""
     data = request.json or {}
-    targets = data.get('targets', [])
     message = data.get('message', '')
     image_path = data.get('image_path')
     scheduled_at = data.get('scheduled_at', '')
@@ -237,7 +233,6 @@ def api_schedule_broadcast():
         return jsonify({"success": False, "error": str(e)})
 
 
-@app.route('/api/broadcast/schedule', methods=['GET'])
 def api_get_scheduled_tasks():
     try:
         from wxauto_service import get_scheduled_tasks
@@ -247,7 +242,6 @@ def api_get_scheduled_tasks():
         return jsonify({"success": False, "error": str(e)})
 
 
-@app.route('/api/broadcast/schedule/<task_id>', methods=['DELETE'])
 def api_cancel_scheduled_task(task_id):
     try:
         from wxauto_service import cancel_scheduled_task
@@ -261,7 +255,6 @@ def api_cancel_scheduled_task(task_id):
 # AI 文案生成
 # ============================================================
 
-@app.route('/api/copy/generate', methods=['POST'])
 def api_generate_copy():
     data = request.json or {}
     context = data.get('context', '')
@@ -269,12 +262,9 @@ def api_generate_copy():
 
     config = load_config()
 
-    if config['ai']['enabled'] and config['ai']['api_key']:
-        ai_result = _call_ai_api(config['ai'], context, style)
         if ai_result:
             return jsonify({"success": True, "copy": ai_result, "source": "ai"})
 
-    if config['fallback']['use_scripts']:
         scripts = load_scripts()
         matched = _match_scripts(context, scripts)
         if matched:
@@ -290,10 +280,6 @@ def api_generate_copy():
 
 def _match_scripts(context, scripts):
     scene_map = {
-        "以旧换新": ["以旧换新", "换新机", "回收", "旧手机", "抵扣", "折价"],
-        "新品推荐": ["新到", "到货", "新机", "新品", "上新", "推荐", "型号"],
-        "促销活动": ["促销", "特价", "打折", "清仓", "限时", "活动", "优惠"],
-        "品牌宣传": ["品牌", "宣传", "介绍", "壹准", "门店", "开业"],
     }
 
     best_tag = "品牌宣传"
@@ -305,19 +291,14 @@ def _match_scripts(context, scripts):
             best_tag = tag
 
     for s in scripts:
-        if s['tag'] == best_tag:
-            return s['text']
 
     if scripts:
-        return scripts[0]['text']
     return None
 
 
 def _call_ai_api(ai_config, context, style):
     try:
         import urllib.request
-        api_url = ai_config['api_url'].rstrip('/') + '/chat/completions'
-        api_key = ai_config['api_key']
         model = ai_config.get('model', 'gpt-4o-mini')
 
         style_guide = {
@@ -331,9 +312,7 @@ def _call_ai_api(ai_config, context, style):
             "model": model,
             "messages": [
                 {"role": "system",
-                 "content": f"你是壹准二手手机店的营销文案助手。根据用户提供的内容，生成一段适合微信营销的文案。风格要求：{style_guide.get(style, style_guide['朋友圈'])}。不要强行添加地址或门店信息，除非用户明确要求。"},
                 {"role": "user", "content": f"根据以下内容生成营销文案：{context}"}
-            ],
             "max_tokens": 300,
             "temperature": 0.8
         }).encode('utf-8')
@@ -345,12 +324,10 @@ def _call_ai_api(ai_config, context, style):
 
         with urllib.request.urlopen(req, timeout=15) as resp:
             result = json.loads(resp.read().decode('utf-8'))
-            return result['choices'][0]['message']['content'].strip()
     except Exception:
         return None
 
 
-@app.route('/api/copy/test-api', methods=['POST'])
 def api_test_ai():
     data = request.json or {}
     api_config = {
@@ -368,13 +345,11 @@ def api_test_ai():
 # 话术库 CRUD
 # ============================================================
 
-@app.route('/api/scripts', methods=['GET'])
 def api_get_scripts():
     scripts = load_scripts()
     return jsonify({"success": True, "scripts": scripts})
 
 
-@app.route('/api/scripts', methods=['POST'])
 def api_add_script():
     data = request.json or {}
     tag = data.get('tag', '').strip()
@@ -389,25 +364,19 @@ def api_add_script():
     return jsonify({"success": True, "script": {"id": new_id, "tag": tag, "text": text}})
 
 
-@app.route('/api/scripts/<script_id>', methods=['PUT'])
 def api_update_script(script_id):
     data = request.json or {}
     scripts = load_scripts()
     for s in scripts:
-        if s['id'] == script_id:
             if 'tag' in data:
-                s['tag'] = data['tag'].strip()
             if 'text' in data:
-                s['text'] = data['text'].strip()
             save_scripts(scripts)
             return jsonify({"success": True, "script": s})
     return jsonify({"success": False, "error": "话术不存在"}), 404
 
 
-@app.route('/api/scripts/<script_id>', methods=['DELETE'])
 def api_delete_script(script_id):
     scripts = load_scripts()
-    scripts = [s for s in scripts if s['id'] != script_id]
     save_scripts(scripts)
     return jsonify({"success": True})
 
@@ -416,24 +385,17 @@ def api_delete_script(script_id):
 # 配置管理
 # ============================================================
 
-@app.route('/api/config', methods=['GET'])
 def api_get_config():
     config = load_config()
-    if config['ai'].get('api_key'):
-        config['ai']['api_key_masked'] = mask_key(config['ai']['api_key'])
     return jsonify({"success": True, "config": config})
 
 
-@app.route('/api/config', methods=['PUT'])
 def api_update_config():
     data = request.json or {}
     config = load_config()
 
-    for section in ['ai', 'fallback', 'broadcast', 'app']:
         if section in data:
-            section_data = data[section]
             cleaned = {k: v for k, v in section_data.items() if v is not None and v != ''}
-            config[section].update(cleaned)
 
     save_config(config)
     return jsonify({"success": True, "config": config})
@@ -443,7 +405,6 @@ def api_update_config():
 # 更新检查
 # ============================================================
 
-@app.route('/api/update/check', methods=['GET'])
 def api_check_update():
     current_ver = APP_VERSION
 
@@ -465,9 +426,6 @@ def api_check_update():
             release = json.loads(body)
             latest_ver = release.get('tag_name', 'v0.0.0').lstrip('v')
             download_url = None
-            for asset in release.get('assets', []):
-                if asset['name'].endswith('.exe'):
-                    download_url = asset['browser_download_url']
                     break
             has_update = _compare_versions(latest_ver, current_ver) > 0
             return jsonify({
@@ -488,24 +446,11 @@ def api_check_update():
 
 
 def _compare_versions(v1, v2):
-    """比较版本号。返回 1（v1更新）、0（相同）、-1（v2更新）。
-    支持 1.2.0 / 1.1.5-preview / 1.0.0-beta 等带后缀的格式。"""
-    def _clean(v):
-        # 去掉 v 前缀和后缀（-preview, -beta, -alpha, -rc 等）
-        v = v.lstrip('v')
-        for sep in ('-', '+', '_'):
-            if sep in v:
-                v = v.split(sep)[0]
-                break
-        return [int(x) for x in v.split('.')]
-
     try:
-        p1 = _clean(v1)
-        p2 = _clean(v2)
-        for a, b in zip(p1, p2):
+        for a, b in zip(parts1, parts2):
             if a > b: return 1
             if a < b: return -1
-        return len(p1) - len(p2)
+        return len(parts1) - len(parts2)
     except Exception:
         return 0
 
@@ -514,7 +459,6 @@ def _compare_versions(v1, v2):
 # 健康检查
 # ============================================================
 
-@app.route('/api/health', methods=['GET'])
 def api_health():
     """健康检查 + 实例自检信息"""
     is_frozen = getattr(sys, 'frozen', False)
@@ -545,7 +489,6 @@ def api_health():
     })
 
 
-@app.route('/api/runtime/diagnostics', methods=['GET'])
 def api_diagnostics():
     """完整运行时诊断信息"""
     is_frozen = getattr(sys, 'frozen', False)
@@ -559,7 +502,6 @@ def api_diagnostics():
     except Exception:
         moment_module_path = '(not loaded)'
 
-    registered_routes = sorted([rule.rule for rule in app.url_map.iter_rules() if rule.rule.startswith('/api/')])
 
     return jsonify({
         "app_version": APP_VERSION,
@@ -584,7 +526,6 @@ def api_diagnostics():
 # 优雅关闭
 # ============================================================
 
-@app.route('/api/shutdown', methods=['POST'])
 def api_shutdown():
     """优雅关闭后端服务"""
     import threading
@@ -602,7 +543,6 @@ def api_shutdown():
 # 朋友圈
 # ============================================================
 
-@app.route('/api/moment/publish', methods=['POST'])
 def api_publish_moment():
     """发布朋友圈（文字/图片/视频）"""
     data = request.json or {}
@@ -631,7 +571,6 @@ def api_publish_moment():
         return jsonify({"success": False, "error": str(e)})
 
 
-@app.route('/api/moment/schedule', methods=['GET'])
 def api_get_scheduled_moments():
     """查看定时朋友圈任务"""
     try:
@@ -641,7 +580,6 @@ def api_get_scheduled_moments():
         return jsonify({"success": False, "error": str(e)})
 
 
-@app.route('/api/moment/schedule/<task_id>', methods=['DELETE'])
 def api_cancel_moment(task_id):
     """取消定时朋友圈"""
     try:
@@ -651,9 +589,8 @@ def api_cancel_moment(task_id):
         return jsonify({"success": False, "error": str(e)})
 
 
-# ── 朋友圈任务管理 ──────────────────
+# ── 朋友圈任务管理 (v1.1.5-preview 新增) ──────────────────
 
-@app.route('/api/moment/tasks', methods=['GET'])
 def api_list_moment_tasks():
     """列出所有朋友圈任务"""
     try:
@@ -664,7 +601,6 @@ def api_list_moment_tasks():
         return jsonify({"success": False, "error": str(e)})
 
 
-@app.route('/api/moment/tasks/<task_id>', methods=['GET'])
 def api_get_moment_task(task_id):
     """获取单个任务详情"""
     try:
@@ -674,7 +610,6 @@ def api_get_moment_task(task_id):
         return jsonify({"success": False, "error": str(e)})
 
 
-@app.route('/api/moment/tasks/<task_id>/logs', methods=['GET'])
 def api_get_moment_task_logs(task_id):
     """获取任务事件日志"""
     try:
@@ -685,7 +620,6 @@ def api_get_moment_task_logs(task_id):
         return jsonify({"success": False, "error": str(e)})
 
 
-@app.route('/api/moment/tasks/<task_id>/cancel', methods=['POST'])
 def api_cancel_moment_task(task_id):
     """取消任务（支持 pending / running 状态）"""
     try:
@@ -701,7 +635,7 @@ def api_cancel_moment_task(task_id):
 
 if __name__ == '__main__':
     print("=" * 50)
-    print(f"  壹准AI微信营销助手 - 后端服务 v{APP_VERSION}")
+    print(f"  壹准AI微信营销助手 Preview - 后端服务 v{APP_VERSION}")
     print(f"  http://localhost:{APP_PORT}")
     print(f"  channel: {APP_CHANNEL}")
     print("=" * 50)
