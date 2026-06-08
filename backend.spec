@@ -3,10 +3,10 @@
 
 a = Analysis(
     ['backend\\app.py'],
-    pathex=[],
+    pathex=['wechat-wxauto'],
     binaries=[],
     datas=[('wechat-wxauto/*.py', 'wechat-wxauto')],
-    hiddenimports=['flask', 'flask_cors', 'wxauto', 'PIL', 'requests', 'numpy', 'image_enhancer', 'ai_copywriter', 'wxauto_service', 'wechat_moment_v2', 'PIL.Image', 'PIL.ImageDraw', 'PIL.ImageFont', 'PIL.ImageFilter', 'PIL.ImageEnhance'],
+    hiddenimports=['flask', 'flask_cors', 'wxauto4', 'PIL', 'requests', 'numpy', 'image_enhancer', 'ai_copywriter', 'wxauto_service', 'wechat_moment_v2', 'PIL.Image', 'PIL.ImageDraw', 'PIL.ImageFont', 'PIL.ImageFilter', 'PIL.ImageEnhance'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
