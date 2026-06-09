@@ -24,7 +24,7 @@ app = Flask(__name__)
 CORS(app)
 
 # ── 应用标识 ──────────────────────────────────────────
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.2"
 APP_CHANNEL = "release"
 APP_PORT = 5679
 APP_STARTED_AT = time.time()

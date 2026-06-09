@@ -12,7 +12,7 @@ const os = require('os');
 // ── 应用常量 ──────────────────────────────────────────
 const BACKEND_PORT = 5679;
 const EXPECTED_CHANNEL = 'release';
-const EXPECTED_VERSION = '1.2.0';
+const EXPECTED_VERSION = '1.2.2';
 
 let mainWindow;
 let backendProcess;
