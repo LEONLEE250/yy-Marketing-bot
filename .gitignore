@@ -1,0 +1,11 @@
+build/
+node_modules/
+backend/build/
+backend/dist/
+backend/__pycache__/
+wechat-wxauto/__pycache__/
+wechat-wxauto/output/
+wxauto_logs/
+*.bak
+*.bak2
+*.spec

@@ -1,0 +1,13 @@
+[2026-06-04 09:52:52] get_sessions worker start: wxauto
+[2026-06-04 09:52:52] session_step=activate_tab:start
+[2026-06-04 09:52:55] session_step=activate_tab:done
+[2026-06-04 09:52:55] session_step=wechat_init:start
+[2026-06-04 09:52:56] get_sessions timeout stage=wxauto
+[2026-06-04 09:53:06] get_sessions error stage=wxauto error=Find Control Timeout: {ClassName: 'mmui::XTabBarItem', Name: '微信', ControlType: ButtonControl}
+[2026-06-04 09:54:08] get_sessions worker start: wxauto
+[2026-06-04 09:54:08] session_step=activate_tab:start
+[2026-06-04 09:54:11] session_step=activate_tab:done
+[2026-06-04 09:54:11] session_step=wechat_init:start
+[2026-06-04 09:54:11] get_sessions wxauto failed: [WinError -2147221008] 尚未调用 CoInitialize。
+[2026-06-04 09:54:12] get_sessions timeout stage=uia_fallback
+[2026-06-04 09:54:13] get_sessions error stage=uia_fallback error=当前微信窗口未定位到聊天会话列表，请先切到微信聊天首页

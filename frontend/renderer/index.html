@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>壹准AI营销助手</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app" id="app">
+  <!-- 标题栏 -->
+  <div class="titlebar" id="titlebar">
+    <div class="titlebar-top">
+      <div class="window-controls">
+        <button class="win-btn win-close" onclick="window.electronAPI.close()"></button>
+        <button class="win-btn win-min" onclick="window.electronAPI.minimize()"></button>
+        <button class="win-btn win-max" onclick="window.electronAPI.maximize()"></button>
+      </div>
+      <span class="app-title">壹准AI营销助手</span>
+      <div class="titlebar-spacer"></div>
+    </div>
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-tab="0">群发中心</button>
+      <button class="tab" data-tab="1">朋友圈</button>
+      <button class="tab" data-tab="2">AI 文案</button>
+      <button class="tab" data-tab="3">话术库</button>
+      <button class="tab" data-tab="4">设置</button>
+    </div>
+  </div>
+
+  <!-- 内容区 -->
+  <div class="content" id="content">
+
+    <!-- Tab 0: 群发中心 -->
+    <div class="panel active" data-panel="0">
+      <div class="two-col">
+        <!-- 左栏：图片 + 文案 -->
+        <div class="col">
+          <div class="card">
+            <div class="card-label">发送图片 / 视频（可选）</div>
+            <div class="upload-zone" id="uploadZone" onclick="selectImage()">
+              <div class="upload-icon" id="uploadIcon">+</div>
+              <div class="upload-text" id="uploadText">拖拽图片到此处</div>
+              <div class="upload-sub">或点击选择文件 · JPG / PNG（支持多选）</div>
+              <img id="imagePreview" class="image-preview hidden" />
+            </div>
+            <div style="margin-top:6px;font-size:12px;color:var(--text-secondary)" id="multiImageCount"></div>
+            <div style="margin-top:8px;display:flex;gap:6px">
+              <button class="btn btn-ghost" onclick="selectImage()" style="flex:1">选择图片</button>
+              <button class="btn btn-ghost" onclick="selectVideo()" style="flex:1">选择视频</button>
+            </div>
+            <div id="videoInfo" class="hidden" style="margin-top:6px;font-size:12px;color:var(--accent)"></div>
+          </div>
+          <div class="card">
+            <div class="card-label">发送内容</div>
+            <textarea class="textarea" id="copyText" placeholder="输入要发送的消息内容..."></textarea>
+            <div class="btn-row">
+              <span class="api-badge" id="copySourceBadge">就绪</span>
+              <button class="btn btn-ghost" onclick="generateCopy()">AI 生成</button>
+            </div>
+          </div>
+          <div class="card hint-card">
+            <div class="hint-text">
+              <strong>使用说明：</strong><br>
+              1. 确保微信已登录<br>
+              2. 输入收件人微信名称（逗号分隔=群发）<br>
+              3. 可选择上传图片+文字，或纯文字<br>
+              4. 选择「立即发送」或「定时发送」
+            </div>
+          </div>
+        </div>
+
+        <!-- 右栏：收件人 + 发送 -->
+        <div class="col">
+          <div class="card">
+            <div class="card-label">收件人</div>
+            <div class="setting-row" style="margin-bottom:8px">
+              <span style="font-size:12px;color:var(--text-secondary)">微信名称/备注，逗号分隔；也可以加载会话列表手动选择</span>
+            </div>
+            <textarea class="textarea small" id="manualField" placeholder="输入收件人微信名称，逗号分隔&#10;例如：张三, 李四, 王五"></textarea>
+            <div style="margin-top:8px;display:flex;gap:8px">
+              <button class="btn btn-ghost" style="flex:1" onclick="loadSessions()">加载会话列表</button>
+            </div>
+            <div class="recipient-list hidden" id="recipientList">
+              <div class="empty-state">点击「加载会话」获取微信聊天列表</div>
+            </div>
+            <div class="status-bar" style="margin-top:8px">
+              <div class="status-dot off"></div>
+              <span class="status-text" id="statusText">检查微信连接...</span>
+            </div>
+          </div>
+
+          <!-- 发送方式 -->
+          <div class="card">
+            <div class="card-label">发送方式</div>
+            <div class="pill-group" id="sendModeGroup">
+              <span class="pill active" data-mode="now">立即发送</span>
+              <span class="pill" data-mode="scheduled">定时发送</span>
+            </div>
+            <div id="scheduledPanel" class="hidden" style="margin-top:12px">
+              <div class="setting-row">
+                <span>发送时间</span>
+                <input type="datetime-local" class="input" id="scheduledTime" />
+              </div>
+              <div class="setting-row">
+                <span>发送间隔(秒)</span>
+                <input class="input small" type="number" step="0.1" min="0.3" max="10" value="0.8" id="sendInterval" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 发送按钮 -->
+          <div class="card send-card" id="sendCard">
+            <div class="send-card-label" id="sendLabel">准备发送</div>
+            <div class="send-card-info" id="sendInfo">请输入收件人和内容</div>
+            <button class="btn btn-send" id="sendBtn">立即发送</button>
+          </div>
+
+          <!-- 定时任务列表 -->
+          <div class="card" id="scheduledTasksCard" style="display:none">
+            <div class="card-label">定时任务</div>
+            <div id="scheduledTasksList"><div class="empty-state">暂无定时任务</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 2: 朋友圈 (data-panel="1") -->
+    <div class="panel" data-panel="1">
+      <div class="card">
+        <div class="card-label" style="display:flex;justify-content:space-between;align-items:center">
+          <span>朋友圈文案</span>
+          <span style="font-size:11px;color:var(--text-secondary)">
+            隐私:
+            <span class="pill active" id="privacyPublic" onclick="setMomentPrivacy('公开')" style="font-size:11px;padding:2px 8px;cursor:pointer">公开</span>
+            <span class="pill" id="privacyPrivate" onclick="setMomentPrivacy('私密')" style="font-size:11px;padding:2px 8px;cursor:pointer">私密</span>
+          </span>
+        </div>
+        <p style="font-size:12px;color:var(--text-secondary);margin:0 0 8px">
+          先确保微信已打开并登录，支持文字 / 图片 / 视频
+        </p>
+        <textarea class="textarea" id="momentText" placeholder="输入朋友圈文字内容，或先点 AI 生成文案..."></textarea>
+        <div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">
+          <span id="momentCharCount">0</span> / 2000 字
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-label">媒体（图片最多9张，视频最多1个）</div>
+        <div class="moment-upload-zone" id="momentUploadZone">
+          <div class="upload-icon" id="momentUploadIcon">📷</div>
+          <div class="upload-text" id="momentUploadText">点击此处选择图片或视频</div>
+          <div class="moment-media-grid" id="momentMediaGrid"></div>
+          <div id="momentMediaPreview" class="hidden"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-ghost btn-sm" onclick="selectMomentImage()">📷 图片</button>
+          <button class="btn btn-ghost btn-sm" onclick="selectMomentVideo()">🎬 视频</button>
+          <button class="btn btn-ghost btn-sm" onclick="clearMomentMedia()" style="color:var(--text-secondary)">清除</button>
+        </div>
+      </div>
+
+      <!-- 发送模式 -->
+      <div class="card">
+        <div class="pill-group" id="momentSendMode">
+          <span class="pill active" data-mode="now">立即发布</span>
+          <span class="pill" data-mode="scheduled">定时发布</span>
+        </div>
+        <div class="hidden" id="momentSchedulePanel" style="margin-top:8px">
+          <label style="font-size:12px;color:var(--text-secondary)">定时时间</label>
+          <input type="datetime-local" class="input" id="momentScheduledTime" style="margin-top:4px">
+        </div>
+      </div>
+
+      <!-- 定时任务清单 -->
+      <div class="card hidden" id="momentScheduledTasksCard">
+        <div class="card-label">待发布任务</div>
+        <div id="momentScheduledTasksList" style="font-size:12px;color:var(--text-secondary)">暂无定时任务</div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-ghost" onclick="generateMomentCopy()">AI 生成文案</button>
+        <button class="btn btn-primary" id="momentPublishBtn" onclick="publishMoment()">发布朋友圈</button>
+      </div>
+
+      <div class="card hidden" id="momentResultCard">
+        <div class="card-label">发布结果</div>
+        <div id="momentResult" style="font-size:13px"></div>
+      </div>
+
+      <!-- 任务进度卡 -->
+      <div class="card task-progress-card hidden" id="momentTaskCard">
+        <div class="card-label">执行进度</div>
+        <div id="momentTaskStatus"></div>
+        <div id="momentStepList"></div>
+        <div style="margin-top:8px">
+          <button class="btn btn-ghost btn-sm" id="momentCancelBtn" style="display:none" onclick="cancelMomentTask()">取消任务</button>
+        </div>
+      </div>
+
+      <!-- 最近日志卡 -->
+      <div class="card hidden" id="momentLogCard">
+        <div class="card-label" style="display:flex;justify-content:space-between;align-items:center">
+          <span>最近日志</span>
+          <button class="btn btn-ghost btn-sm" onclick="refreshMomentLogs()" style="font-size:11px">刷新</button>
+        </div>
+        <div class="log-card" id="momentLogList"></div>
+      </div>
+    </div>
+
+    <!-- Tab 3: AI 文案 (data-panel="2") -->
+    <div class="panel" data-panel="2">
+      <div class="card">
+        <div class="card-label">场景描述</div>
+        <textarea class="textarea" id="copyContext" placeholder="描述你想推广的内容，如：以旧换新活动，旧手机换新机..."></textarea>
+        <div class="pill-group" id="stylePills">
+          <span class="pill active" data-style="朋友圈">朋友圈风</span>
+          <span class="pill" data-style="营销">微信群消息</span>
+          <span class="pill" data-style="简洁">简洁版</span>
+          <span class="pill" data-style="专业">热情营销</span>
+        </div>
+        <div class="btn-row">
+          <span class="api-badge" id="aiSourceBadge">就绪</span>
+          <button class="btn btn-primary" onclick="generateAICopy()">生成文案</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">生成结果</div>
+        <div class="textarea" id="copyResult" style="min-height:100px;white-space:pre-wrap"></div>
+        <div class="btn-row">
+          <button class="btn btn-ghost" onclick="copyToClipboard('copyResult')">复制</button>
+          <button class="btn btn-ghost" onclick="generateAICopy()">再生成一条</button>
+          <button class="btn btn-primary" onclick="useCopyForBroadcast()">用于群发</button>
+        </div>
+      </div>
+      <div class="card hint-card" id="noApiHint">
+        <div class="hint-text">当前使用<strong>内置话术库</strong>生成，效果有限。在「设置」中配置 API Key 可解锁 AI 智能生成。</div>
+      </div>
+    </div>
+
+    <!-- Tab 2: 话术库 (data-panel="3") -->
+    <div class="panel" data-panel="3">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-label" style="margin-bottom:0">内置话术库</div>
+          <button class="btn btn-primary btn-sm" onclick="showAddScript()">+ 新增话术</button>
+        </div>
+        <div id="scriptsList"><div class="empty-state">加载中...</div></div>
+        <div id="addScriptForm" class="hidden" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+          <div class="card-label">新增话术</div>
+          <div class="input-row" style="margin-bottom:8px">
+            <input class="input" style="flex:0 0 120px" placeholder="分类标签" id="newScriptTag" />
+            <input class="input" placeholder="话术内容，支持 {变量} 占位符" id="newScriptText" />
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-ghost" onclick="hideAddScript()">取消</button>
+            <button class="btn btn-primary" onclick="saveScript()">保存话术</button>
+          </div>
+        </div>
+        <div id="editScriptForm" class="hidden" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
+          <div class="card-label">编辑话术</div>
+          <input type="hidden" id="editScriptId" />
+          <div class="input-row" style="margin-bottom:8px">
+            <input class="input" style="flex:0 0 120px" placeholder="分类标签" id="editScriptTag" />
+            <input class="input" placeholder="话术内容" id="editScriptText" />
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-ghost" onclick="hideEditScript()">取消</button>
+            <button class="btn btn-primary" onclick="updateScript()">保存修改</button>
+          </div>
+        </div>
+      </div>
+      <div class="section-note">话术库用于无 API Key 时的文案兜底，支持 {变量} 占位符。</div>
+    </div>
+
+    <!-- Tab 3: 设置 (data-panel="4") -->
+    <div class="panel" data-panel="4">
+      <div class="two-col">
+        <div class="col">
+          <div class="card">
+            <div class="card-label">AI 接口配置</div>
+            <div class="setting-row">
+              <div>
+                <span class="setting-label">启用 AI 文案</span>
+                <span class="setting-sub">关闭后使用话术库 + 手动输入</span>
+              </div>
+              <label class="toggle-switch"><input type="checkbox" id="aiEnabled"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="setting-row">
+              <div><span class="setting-label">API 地址</span></div>
+              <input class="input small" value="https://api.openai.com/v1" id="apiUrl" />
+            </div>
+            <div class="setting-row">
+              <div><span class="setting-label">API Key</span></div>
+              <input class="input small" type="password" placeholder="sk-..." id="apiKey" />
+            </div>
+            <div class="setting-row">
+              <div><span class="setting-label">模型</span></div>
+              <input class="input small" type="text" value="gpt-4o-mini" id="aiModel" placeholder="输入模型名称" />
+            </div>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+              <span class="api-badge" id="apiTestBadge">未测试</span>
+              <button class="btn btn-ghost btn-sm" onclick="testApiConnection()">测试连接</button>
+              <button class="btn btn-primary btn-sm" onclick="saveAllSettings()">保存设置</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-label">文案降级策略</div>
+            <div class="setting-row">
+              <div><span class="setting-label">无 Key 时自动用话术库</span></div>
+              <label class="toggle-switch"><input type="checkbox" id="useScripts" checked><span class="toggle-slider"></span></label>
+            </div>
+            <div class="setting-row">
+              <div><span class="setting-label">允许手动输入</span></div>
+              <label class="toggle-switch"><input type="checkbox" id="allowManual" checked><span class="toggle-slider"></span></label>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="card">
+            <div class="card-label">群发安全</div>
+            <div class="setting-row">
+              <div><span class="setting-label">排除名单</span></div>
+              <input class="input small" value="微信团队, 文件传输助手" id="excludeList" />
+            </div>
+          </div>
+          <div class="card about-card">
+            <div class="about-info">
+              <div class="about-name">壹准AI营销助手</div>
+              <div class="about-version">v1.2.2 · 2026</div>
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="checkUpdate()">检查更新</button>
+          </div>
+            <div id="diagContent" style="font-size:12px;color:var(--text-secondary)">正在检测...</div>
+            <div style="margin-top:8px">
+              <button class="btn btn-ghost btn-sm" onclick="refreshDiagnostics()">刷新</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast hidden" id="toast"></div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

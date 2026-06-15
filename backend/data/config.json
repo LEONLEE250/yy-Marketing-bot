@@ -1,0 +1,24 @@
+{
+  "ai": {
+    "enabled": true,
+    "api_url": "https://api.siliconflow.cn/v1",
+    "api_key": "sk-fakebywkmmdonhqcqildrwcmxuxotbuimoecyyhsjzkqpsie",
+    "model": "deepseek-ai/DeepSeek-V3.2",
+    "tested": false
+  },
+  "fallback": {
+    "use_scripts": true,
+    "allow_manual": true
+  },
+  "broadcast": {
+    "interval": 1,
+    "exclude": [
+      "微信团队",
+      "文件传输助手"
+    ]
+  },
+  "app": {
+    "version": "1.0.5",
+    "update_channel": "github"
+  }
+}
