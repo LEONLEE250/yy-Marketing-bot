@@ -24,7 +24,7 @@ app.on('second-instance', () => {
 // ── Preview 常量 ──────────────────────────────────────────
 const BACKEND_PORT = 5680;
 const EXPECTED_CHANNEL = 'preview';
-const EXPECTED_VERSION = '1.2.2';
+const EXPECTED_VERSION = '2.0.1';
 
 let mainWindow;
 let backendProcess;
@@ -273,6 +273,36 @@ function createWindow() {
 
   // 朋友圈发布 — 独立脚本直调（不走 Flask，避免 COM 互崩）
   ipcMain.handle('publish-moment', async (event, { text, mediaPaths, privacy, contact }) => {
+    // 打包模式：优先使用内置 exe（跨电脑无需 Python），exe 不存在时回退 Python 脚本
+    if (app.isPackaged) {
+      const bundledExe = path.join(process.resourcesPath, 'moment_publisher.exe');
+      if (fs.existsSync(bundledExe)) {
+        const args = ['--text', text, '--privacy', privacy || '公开', '--json'];
+        if (contact) args.push('--contact', contact);
+        if (mediaPaths && mediaPaths.length > 0) args.push('--media', ...mediaPaths);
+        return new Promise((resolve) => {
+          const proc = spawn(bundledExe, args, { windowsHide: true });
+          proc.stdout.setEncoding('utf8');
+          proc.stderr.setEncoding('utf8');
+          let stdout = '', stderr = '';
+          proc.stdout.on('data', d => stdout += d);
+          proc.stderr.on('data', d => stderr += d);
+          proc.on('close', (code) => {
+            try {
+              const lines = stdout.trim().split('\n');
+              for (let i = lines.length - 1; i >= 0; i--) {
+                try { resolve(JSON.parse(lines[i].trim())); return; } catch (_) {}
+              }
+              const tail = (stdout + '\n---STDERR---\n' + stderr).slice(-500).trim() || `退出(code=${code})`;
+              resolve({ success: false, error: tail });
+            } catch { resolve({ success: false, error: `退出(code=${code})` }); }
+          });
+          proc.on('error', (err) => resolve({ success: false, error: `无法启动: ${err.message}` }));
+          setTimeout(() => { try { proc.kill(); } catch(_){} }, 120000);
+        });
+      }
+    }
+    // 开发模式 / 回退：始终用 Python 脚本（与 v2.0.0 完全一致）
     const python = resolvePythonPath();
     // 打包模式：extraResources 把 wechat-wxauto/ 复制到 resources/wechat-wxauto/
     // 开发模式：wechat-wxauto/ 在项目根目录

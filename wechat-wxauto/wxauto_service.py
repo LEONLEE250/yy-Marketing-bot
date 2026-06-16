@@ -482,24 +482,11 @@ def _send_via_keyboard(target, message, image_path=None):
     pyautogui.hotkey('ctrl', 'v')
     time.sleep(0.8)
     pyautogui.press('enter')
-    time.sleep(1.0)
+    time.sleep(1.5)  # 等待聊天窗口完全打开，输入框自动获得焦点
 
-    # 搜索进入聊天后，焦点可能在聊天列表上。
-    # 重新聚焦微信窗口并点击输入区以确保焦点到位
-    try:
-        _focus_weixin_main_window()
-        time.sleep(0.3)
-        # 使用 pygetwindow 获取微信窗口位置
-        for w in gw.getWindowsWithTitle("微信"):
-            if getattr(w, 'width', 0) > 300:
-                # 点击聊天输入区域：窗口左下角
-                cx = w.left + (w.width // 3)
-                cy = w.bottom - 60
-                pyautogui.click(cx, cy)
-                time.sleep(0.5)
-                break
-    except Exception:
-        pass  # 失败也不阻塞流程
+    # 确保微信窗口在前台
+    _focus_weixin_main_window()
+    time.sleep(0.3)
 
     if image_path:
         path = _normalize_path(image_path)

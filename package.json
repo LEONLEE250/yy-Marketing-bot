@@ -1,6 +1,6 @@
 {
   "name": "yizhun-wechat-bot",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "壹准AI营销助手 - 微信群发 + AI文案 + 定时发送 + 朋友圈",
   "main": "frontend/main.js",
   "scripts": {
@@ -33,6 +33,10 @@
       {
         "from": "wechat-wxauto/",
         "to": "wechat-wxauto/"
+      },
+      {
+        "from": "moment_dist/moment_publisher.exe",
+        "to": "moment_publisher.exe"
       }
     ],
     "win": {

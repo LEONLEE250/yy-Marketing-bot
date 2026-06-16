@@ -34,6 +34,13 @@ import uiautomation as auto
 import numpy as np
 from PIL import ImageGrab
 
+# === 确保与开发机 Python 相同的坐标系统（PyInstaller exe 需显式声明）===
+try:
+    import ctypes
+    ctypes.windll.user32.SetProcessDPIAware()
+except Exception:
+    pass
+
 pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0.3
 
@@ -48,6 +55,21 @@ def get_window(title_substr):
                 result['rect'] = win32gui.GetWindowRect(hwnd)
     win32gui.EnumWindows(cb, None)
     return result if result else None
+
+
+def _sidebar_moments_offset():
+    """返回侧边栏朋友圈按钮的 y 偏移量（DPI 自适应）。
+    基准：开发机 125% DPI 下 y_offset=320px 一次命中。"""
+    try:
+        import ctypes
+        hdc = ctypes.windll.user32.GetDC(0)
+        dpi = ctypes.windll.gdi32.GetDeviceCaps(hdc, 88)  # LOGPIXELSY
+        ctypes.windll.user32.ReleaseDC(0, hdc)
+        offset = int(320 * dpi / 120.0)  # 按 DPI 比例换算
+        print(f"  DPI={dpi}, sidebar_y_offset={offset}")
+        return offset
+    except Exception:
+        return 320  # 回退到开发机基准值
 
 
 def wait_for_window(title_substr, timeout=10):
@@ -159,9 +181,10 @@ class MomentPublisher:
         win32gui.SetForegroundWindow(wx['hwnd'])
         time.sleep(0.3)
         
-        # 点击侧边栏朋友圈 (之前验证过 y_offset=320)
+        # 点击侧边栏朋友圈（DPI 自适应）
         r = wx['rect']
-        pyautogui.click(r[0] + 30, r[1] + 320)
+        y_off = _sidebar_moments_offset()
+        pyautogui.click(r[0] + 30, r[1] + y_off)
         time.sleep(1.5)
         
         # 验证朋友圈窗口出现
