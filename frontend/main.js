@@ -24,7 +24,7 @@ app.on('second-instance', () => {
 // ── Preview 常量 ──────────────────────────────────────────
 const BACKEND_PORT = 5680;
 const EXPECTED_CHANNEL = 'preview';
-const EXPECTED_VERSION = '2.2.0';
+const EXPECTED_VERSION = '2.2.1';
 
 let mainWindow;
 let backendProcess;
@@ -517,46 +517,59 @@ function createWindow() {
 
     return new Promise((resolve, reject) => {
       const file = fs.createWriteStream(filePath);
+      let finalUrl = downloadUrl;
+      let redirectCount = 0;
 
-      function handleResponse(response) {
-        if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-          https.get(response.headers.location, handleResponse).on('error', reject);
-          return;
-        }
-
-        const totalSize = parseInt(response.headers['content-length'] || '0', 10);
-        let downloaded = 0;
-
-        response.on('data', (chunk) => {
-          downloaded += chunk.length;
-          if (totalSize > 0) {
-            const progress = Math.round((downloaded / totalSize) * 100);
-            mainWindow.webContents.send('download-progress', { status: 'downloading', progress });
+      function makeRequest(url) {
+        finalUrl = url;
+        const proto = url.startsWith('https') ? https : require('http');
+        const req = proto.get(url, { headers: { 'User-Agent': 'YizhunApp/2.0' } }, (response) => {
+          // Follow redirects (GitHub → S3)
+          if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+            redirectCount++;
+            if (redirectCount > 5) return reject(new Error('Too many redirects'));
+            return makeRequest(response.headers.location);
           }
+
+          const totalSize = parseInt(response.headers['content-length'] || '0', 10);
+          let downloaded = 0;
+
+          response.on('data', (chunk) => {
+            downloaded += chunk.length;
+            const pct = totalSize > 0 ? Math.round((downloaded / totalSize) * 100) : Math.round(downloaded / 1024 / 1024);
+            mainWindow.webContents.send('download-progress', { status: 'downloading', progress: pct, downloaded, totalSize });
+          });
+
+          response.pipe(file);
+
+          file.on('finish', () => {
+            file.close();
+            mainWindow.webContents.send('download-progress', { status: 'complete', filePath });
+            resolve({ success: true, filePath });
+          });
+
+          file.on('error', (err) => {
+            file.close();
+            try { fs.unlinkSync(filePath); } catch (e) {}
+            mainWindow.webContents.send('download-progress', { status: 'error', error: err.message });
+            reject(err);
+          });
         });
 
-        response.pipe(file);
-
-        file.on('finish', () => {
-          file.close();
-          mainWindow.webContents.send('download-progress', { status: 'complete', filePath });
-          resolve({ success: true, filePath });
-        });
-
-        file.on('error', (err) => {
+        req.on('error', (err) => {
           file.close();
           try { fs.unlinkSync(filePath); } catch (e) {}
           mainWindow.webContents.send('download-progress', { status: 'error', error: err.message });
           reject(err);
         });
+
+        req.setTimeout(30000, () => {
+          req.destroy();
+          reject(new Error('连接超时'));
+        });
       }
 
-      https.get(downloadUrl, handleResponse).on('error', (err) => {
-        file.close();
-        try { fs.unlinkSync(filePath); } catch (e) {}
-        mainWindow.webContents.send('download-progress', { status: 'error', error: err.message });
-        reject(err);
-      });
+      makeRequest(downloadUrl);
     });
   });
 

@@ -1058,8 +1058,13 @@ function downloadUpdate(url, contentEl) {
 
   window.electronAPI.onDownloadProgress((data) => {
     if (data.status === 'downloading') {
-      fill.style.width = data.progress + '%';
-      text.textContent = data.progress + '%';
+      if (data.totalSize > 0) {
+        fill.style.width = data.progress + '%';
+        text.textContent = data.progress + '%';
+      } else {
+        fill.style.width = '50%';  // indeterminate
+        text.textContent = Math.round(data.downloaded / 1024 / 1024) + ' MB';
+      }
       status.textContent = '正在下载安装包...';
     } else if (data.status === 'complete') {
       downloadedPath = data.filePath;
