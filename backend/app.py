@@ -1,6 +1,6 @@
 """
 壹准 AI 营销助手 - Flask 后端 API v1.2.2
-端口 5680
+v2.1.3 · 端口 5680
 """
 
 import sys
@@ -25,7 +25,7 @@ app = Flask(__name__)
 CORS(app)
 
 # ── 应用标识 ──────────────────────────────────────────
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.1.23"
 APP_CHANNEL = "preview"
 APP_PORT = 5680
 APP_STARTED_AT = time.time()

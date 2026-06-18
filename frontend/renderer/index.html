@@ -12,13 +12,15 @@
   <!-- 标题栏 -->
   <div class="titlebar" id="titlebar">
     <div class="titlebar-top">
-      <div class="window-controls">
-        <button class="win-btn win-close" onclick="window.electronAPI.close()"></button>
-        <button class="win-btn win-min" onclick="window.electronAPI.minimize()"></button>
-        <button class="win-btn win-max" onclick="window.electronAPI.maximize()"></button>
-      </div>
       <span class="app-title">壹准AI营销助手</span>
-      <div class="titlebar-spacer"></div>
+      <div class="titlebar-actions">
+        <button class="theme-toggle" id="themeToggle" title="切换日/夜间模式" onclick="toggleTheme()">🌙</button>
+        <div class="win-ctrls">
+          <button class="win-btn" title="最小化" onclick="window.electronAPI.minimize()"><svg viewBox="0 0 12 12"><line x1="2" y1="6" x2="10" y2="6"/></svg></button>
+          <button class="win-btn" title="最大化" onclick="window.electronAPI.maximize()"><svg viewBox="0 0 12 12"><rect x="2" y="2" width="8" height="8" rx="1"/></svg></button>
+          <button class="win-btn win-close" title="关闭" onclick="window.electronAPI.close()"><svg viewBox="0 0 12 12"><line x1="2" y1="2" x2="10" y2="10"/><line x1="10" y1="2" x2="2" y2="10"/></svg></button>
+        </div>
+      </div>
     </div>
     <div class="tabs" id="tabs">
       <button class="tab active" data-tab="0">群发中心</button>
@@ -40,16 +42,15 @@
           <div class="card">
             <div class="card-label">发送图片 / 视频（可选）</div>
             <div class="upload-zone" id="uploadZone" onclick="selectImage()">
-              <div class="upload-icon" id="uploadIcon">+</div>
-              <div class="upload-text" id="uploadText">拖拽图片到此处</div>
-              <div class="upload-sub">或点击选择文件 · JPG / PNG（支持多选）</div>
-              <img id="imagePreview" class="image-preview hidden" />
+              <div class="upload-icon" id="uploadIcon">🖼️</div>
+              <div class="upload-text" id="uploadText">拖拽或点击上传图片/视频到此处</div>
+              <div class="upload-sub">JPG / PNG / MP4 · 支持多选</div>
+              <div class="broadcast-preview-wrap hidden" id="imagePreviewWrap">
+                <img id="imagePreview" class="image-preview" />
+                <span class="del-btn-overlay" onclick="event.stopPropagation(); clearBroadcastImage()">✕</span>
+              </div>
             </div>
-            <div style="margin-top:6px;font-size:12px;color:var(--text-secondary)" id="multiImageCount"></div>
-            <div style="margin-top:8px;display:flex;gap:6px">
-              <button class="btn btn-ghost" onclick="selectImage()" style="flex:1">选择图片</button>
-              <button class="btn btn-ghost" onclick="selectVideo()" style="flex:1">选择视频</button>
-            </div>
+            <div style="margin-top:6px;font-size:12px;color:var(--text2)" id="multiImageCount"></div>
             <div id="videoInfo" class="hidden" style="margin-top:6px;font-size:12px;color:var(--accent)"></div>
           </div>
           <div class="card">
@@ -64,8 +65,8 @@
             <div class="hint-text">
               <strong>使用说明：</strong><br>
               1. 确保微信已登录<br>
-              2. 输入收件人微信名称（逗号分隔=群发）<br>
-              3. 可选择上传图片+文字，或纯文字<br>
+              2. 点击「加载会话列表」选择收件人<br>
+              3. 可选择上传图片 / 视频 + 文字<br>
               4. 选择「立即发送」或「定时发送」
             </div>
           </div>
@@ -73,14 +74,25 @@
 
         <!-- 右栏：收件人 + 发送 -->
         <div class="col">
+          <!-- 定时任务列表 -->
+          <div class="schedule-banner hidden" id="scheduledTasksCard">
+            <div class="schedule-banner-head">
+              <span class="dot"></span>
+              <span class="schedule-banner-title">群发定时任务</span>
+            </div>
+            <div id="scheduledTasksList"><div class="empty-state">暂无定时任务</div></div>
+          </div>
+
           <div class="card">
             <div class="card-label">收件人</div>
             <div class="setting-row" style="margin-bottom:8px">
-              <span style="font-size:12px;color:var(--text-secondary)">微信名称/备注，逗号分隔；也可以加载会话列表手动选择</span>
+              <span style="font-size:12px;color:var(--text2)">从会话列表选择收件人</span>
             </div>
-            <textarea class="textarea small" id="manualField" placeholder="输入收件人微信名称，逗号分隔&#10;例如：张三, 李四, 王五"></textarea>
+            <div style="display:none">
+              <textarea class="textarea small" id="manualField" placeholder="输入收件人微信名称，逗号分隔&#10;例如：张三, 李四, 王五"></textarea>
+            </div>
             <div style="margin-top:8px;display:flex;gap:8px">
-              <button class="btn btn-ghost" style="flex:1" onclick="loadSessions()">加载会话列表</button>
+              <button class="btn btn-primary" style="flex:1" onclick="loadSessions()">加载会话列表</button>
             </div>
             <div class="recipient-list hidden" id="recipientList">
               <div class="empty-state">点击「加载会话」获取微信聊天列表</div>
@@ -116,48 +128,46 @@
             <div class="send-card-info" id="sendInfo">请输入收件人和内容</div>
             <button class="btn btn-send" id="sendBtn">立即发送</button>
           </div>
-
-          <!-- 定时任务列表 -->
-          <div class="card" id="scheduledTasksCard" style="display:none">
-            <div class="card-label">定时任务</div>
-            <div id="scheduledTasksList"><div class="empty-state">暂无定时任务</div></div>
-          </div>
         </div>
       </div>
     </div>
 
     <!-- Tab 2: 朋友圈 (data-panel="1") -->
     <div class="panel" data-panel="1">
+      <!-- 定时任务清单 -->
+      <div class="schedule-banner hidden" id="momentScheduledTasksCard">
+        <div class="schedule-banner-head">
+          <span class="dot"></span>
+          <span class="schedule-banner-title">定时任务</span>
+          <span class="schedule-badge hidden" id="scheduleBadge"></span>
+        </div>
+        <div id="momentScheduledTasksList"></div>
+      </div>
       <div class="card">
         <div class="card-label" style="display:flex;justify-content:space-between;align-items:center">
           <span>朋友圈文案</span>
-          <span style="font-size:11px;color:var(--text-secondary)">
-            隐私:
-            <span class="pill active" id="privacyPublic" onclick="setMomentPrivacy('公开')" style="font-size:11px;padding:2px 8px;cursor:pointer">公开</span>
-            <span class="pill" id="privacyPrivate" onclick="setMomentPrivacy('私密')" style="font-size:11px;padding:2px 8px;cursor:pointer">私密</span>
+          <span style="display:flex;gap:6px;align-items:center;font-size:10px;font-weight:500;color:var(--text2);text-transform:none;letter-spacing:0">
+            隐私
+            <span class="pill active" id="privacyPublic" onclick="setMomentPrivacy('公开')" style="cursor:pointer">公开</span>
+            <span class="pill" id="privacyPrivate" onclick="setMomentPrivacy('私密')" style="cursor:pointer">私密</span>
           </span>
         </div>
-        <p style="font-size:12px;color:var(--text-secondary);margin:0 0 8px">
+        <p style="font-size:12px;color:var(--text2);margin:0 0 8px">
           先确保微信已打开并登录，支持文字 / 图片 / 视频
         </p>
         <textarea class="textarea" id="momentText" placeholder="输入朋友圈文字内容，或先点 AI 生成文案..."></textarea>
-        <div style="margin-top:4px;font-size:11px;color:var(--text-secondary)">
+        <div style="margin-top:4px;font-size:11px;color:var(--text2)">
           <span id="momentCharCount">0</span> / 2000 字
         </div>
       </div>
 
       <div class="card">
         <div class="card-label">媒体（图片最多9张，视频最多1个）</div>
-        <div class="moment-upload-zone" id="momentUploadZone">
-          <div class="upload-icon" id="momentUploadIcon">📷</div>
-          <div class="upload-text" id="momentUploadText">点击此处选择图片或视频</div>
+        <div class="moment-upload-zone" id="momentUploadZone" onclick="handleMomentMediaClick(event)">
+          <div class="upload-icon" id="momentUploadIcon">🖼️</div>
+          <div class="upload-text" id="momentUploadText">拖拽或点击上传图片/视频到此处</div>
           <div class="moment-media-grid" id="momentMediaGrid"></div>
           <div id="momentMediaPreview" class="hidden"></div>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button class="btn btn-ghost btn-sm" onclick="selectMomentImage()">📷 图片</button>
-          <button class="btn btn-ghost btn-sm" onclick="selectMomentVideo()">🎬 视频</button>
-          <button class="btn btn-ghost btn-sm" onclick="clearMomentMedia()" style="color:var(--text-secondary)">清除</button>
         </div>
       </div>
 
@@ -168,15 +178,9 @@
           <span class="pill" data-mode="scheduled">定时发布</span>
         </div>
         <div class="hidden" id="momentSchedulePanel" style="margin-top:8px">
-          <label style="font-size:12px;color:var(--text-secondary)">定时时间</label>
+          <label style="font-size:12px;color:var(--text2)">定时时间</label>
           <input type="datetime-local" class="input" id="momentScheduledTime" style="margin-top:4px">
         </div>
-      </div>
-
-      <!-- 定时任务清单 -->
-      <div class="card hidden" id="momentScheduledTasksCard">
-        <div class="card-label">待发布任务</div>
-        <div id="momentScheduledTasksList" style="font-size:12px;color:var(--text-secondary)">暂无定时任务</div>
       </div>
 
       <div class="actions">
@@ -227,7 +231,7 @@
       </div>
       <div class="card">
         <div class="card-label">生成结果</div>
-        <div class="textarea" id="copyResult" style="min-height:100px;white-space:pre-wrap"></div>
+        <div class="copy-result" id="copyResult" style="min-height:100px;white-space:pre-wrap"></div>
         <div class="btn-row">
           <button class="btn btn-ghost" onclick="copyToClipboard('copyResult')">复制</button>
           <button class="btn btn-ghost" onclick="generateAICopy()">再生成一条</button>
@@ -328,11 +332,11 @@
           <div class="card about-card">
             <div class="about-info">
               <div class="about-name">壹准AI营销助手</div>
-              <div class="about-version">v2.0.1 · 2026</div>
+              <div class="about-version" id="aboutVersion">v2.2.0 · 2026</div>
             </div>
             <button class="btn btn-ghost btn-sm" onclick="checkUpdate()">检查更新</button>
           </div>
-            <div id="diagContent" style="font-size:12px;color:var(--text-secondary)">正在检测...</div>
+            <div id="diagContent" style="font-size:12px;color:var(--text2)">正在检测...</div>
             <div style="margin-top:8px">
               <button class="btn btn-ghost btn-sm" onclick="refreshDiagnostics()">刷新</button>
             </div>
@@ -347,5 +351,11 @@
 </div>
 
 <script src="app.js"></script>
+<script>
+// ── 日/夜间模式切换 ──
+(function(){var s=localStorage.getItem('theme')||'dark';document.documentElement.setAttribute('data-theme',s);updateToggleIcon(s);})();
+function toggleTheme(){var c=document.documentElement.getAttribute('data-theme');var n=(c==='dark')?'light':'dark';document.documentElement.setAttribute('data-theme',n);localStorage.setItem('theme',n);updateToggleIcon(n);}
+function updateToggleIcon(t){var e=document.getElementById('themeToggle');if(e)e.textContent=(t==='dark')?'🌙':'☀️';}
+</script>
 </body>
 </html>

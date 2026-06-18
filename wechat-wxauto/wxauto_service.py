@@ -136,6 +136,7 @@ print(json.dumps({
             timeout=10,
             encoding="utf-8",
             errors="ignore",
+            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
         )
         stdout = (result.stdout or "").strip().splitlines()
         raw = stdout[-1] if stdout else ""

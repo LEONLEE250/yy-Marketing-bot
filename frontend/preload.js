@@ -15,4 +15,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getRuntimeMeta: () => ipcRenderer.invoke('get-runtime-meta'),
   restartBackend: () => ipcRenderer.invoke('restart-backend'),
   publishMoment: (data) => ipcRenderer.invoke('publish-moment', data),
+  deleteScript: (id) => ipcRenderer.invoke('delete-script', id),
+  updateScript: (id, data) => ipcRenderer.invoke('update-script', { id, ...data }),
+  addScript: (data) => ipcRenderer.invoke('add-script', data),
+  getScripts: () => ipcRenderer.invoke('get-scripts'),
+  getFileSize: (path) => ipcRenderer.invoke('get-file-size', path),
+  getThumbnail: (path, maxWidth) => ipcRenderer.invoke('get-thumbnail', path, maxWidth),
+  compressImage: (path) => ipcRenderer.invoke('compress-image', path),
 });

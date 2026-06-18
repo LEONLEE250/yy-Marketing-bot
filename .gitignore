@@ -3,9 +3,12 @@ node_modules/
 backend/build/
 backend/dist/
 backend/__pycache__/
+backend/build-pyi/
 wechat-wxauto/__pycache__/
 wechat-wxauto/output/
 wxauto_logs/
+dist/
+moment_dist/
 *.bak
 *.bak2
 *.spec

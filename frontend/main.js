@@ -1,7 +1,7 @@
 // 清除可能干扰 Electron 的环境变量
 delete process.env.NODE_OPTIONS;
 delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } = require('electron');
 const path = require('path');
 const { spawn, execFile } = require('child_process');
 const https = require('https');
@@ -24,7 +24,7 @@ app.on('second-instance', () => {
 // ── Preview 常量 ──────────────────────────────────────────
 const BACKEND_PORT = 5680;
 const EXPECTED_CHANNEL = 'preview';
-const EXPECTED_VERSION = '2.0.1';
+const EXPECTED_VERSION = '2.2.0';
 
 let mainWindow;
 let backendProcess;
@@ -207,6 +207,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      sandbox: false,
     },
   });
 
@@ -376,6 +377,130 @@ function createWindow() {
     } catch (err) {
       console.error('File copy failed:', err);
       return null;
+    }
+  });
+
+  // ── 话术库管理（直接操作 scripts.json，不依赖 backend.exe 版本）──
+  function _getScriptsPath() {
+    const dataDir = path.join(app.getPath('appData'), 'yizhun-wechat-bot-preview');
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    return path.join(dataDir, 'scripts.json');
+  }
+  function _loadScriptsSafe() {
+    const p = _getScriptsPath();
+    if (!fs.existsSync(p)) return [];
+    const raw = fs.readFileSync(p, 'utf-8');
+    if (!raw || !raw.trim()) return [];
+    try { return JSON.parse(raw); } catch (_) { return []; }
+  }
+  function _saveScriptsSafe(arr) {
+    const p = _getScriptsPath();
+    fs.writeFileSync(p, JSON.stringify(arr, null, 2), 'utf-8');
+  }
+
+  ipcMain.handle('get-scripts', async () => {
+    try {
+      const scripts = _loadScriptsSafe();
+      return { success: true, scripts };
+    } catch (err) {
+      console.error('[get-scripts]', err.message);
+      return { success: false, error: err.message, scripts: [] };
+    }
+  });
+
+  ipcMain.handle('add-script', async (event, { tag, text }) => {
+    try {
+      const scripts = _loadScriptsSafe();
+      const newId = 'sc_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      scripts.push({ id: newId, tag: (tag || '').trim(), text: (text || '').trim() });
+      _saveScriptsSafe(scripts);
+      return { success: true, id: newId };
+    } catch (err) {
+      console.error('[add-script]', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('delete-script', async (event, scriptId) => {
+    try {
+      const scripts = _loadScriptsSafe();
+      _saveScriptsSafe(scripts.filter(s => s.id !== scriptId));
+      return { success: true };
+    } catch (err) {
+      console.error('[delete-script]', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('update-script', async (event, { id, tag, text }) => {
+    try {
+      const scripts = _loadScriptsSafe();
+      for (const s of scripts) {
+        if (s.id === id) {
+          if (tag !== undefined) s.tag = (tag || '').trim();
+          if (text !== undefined) s.text = (text || '').trim();
+          _saveScriptsSafe(scripts);
+          return { success: true, script: s };
+        }
+      }
+      return { success: false, error: '话术不存在' };
+    } catch (err) {
+      console.error('[update-script]', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ── 文件大小查询 ──
+  ipcMain.handle('get-file-size', async (event, filePath) => {
+    try {
+      const stat = fs.statSync(filePath);
+      return { size: stat.size };
+    } catch (err) {
+      return { size: -1, error: err.message };
+    }
+  });
+
+  // ── 图片缩略图生成（解决大图预览卡顿）──
+  ipcMain.handle('get-thumbnail', async (event, filePath, maxWidth = 400) => {
+    try {
+      if (!fs.existsSync(filePath)) return { dataUrl: null };
+      // 用 Electron nativeImage 读取并缩放
+      const img = nativeImage.createFromPath(filePath);
+      if (img.isEmpty()) return { dataUrl: null };
+      const orig = img.getSize();
+      let w = orig.width, h = orig.height;
+      if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+      const thumb = img.resize({ width: w, height: h, quality: 'good' });
+      return { dataUrl: thumb.toDataURL() };
+    } catch (err) {
+      console.error('[get-thumbnail]', err.message);
+      return { dataUrl: null };
+    }
+  });
+
+  // ── 图片压缩（解决大图 wxauto SendFiles 静默失败）──
+  ipcMain.handle('compress-image', async (event, filePath) => {
+    try {
+      if (!fs.existsSync(filePath)) return { success: false, error: 'file not found' };
+      const img = nativeImage.createFromPath(filePath);
+      if (img.isEmpty()) return { success: false, error: 'cannot read image' };
+      const orig = img.getSize();
+      const MAX_DIM = 2880;
+      let w = orig.width, h = orig.height;
+      if (w > MAX_DIM || h > MAX_DIM) {
+        if (w >= h) { h = Math.round(h * MAX_DIM / w); w = MAX_DIM; }
+        else        { w = Math.round(w * MAX_DIM / h); h = MAX_DIM; }
+      }
+      const compressed = img.resize({ width: w, height: h, quality: 'best' });
+      const jpegBuf = compressed.toJPEG(85);
+      const tmpDir = path.join(app.getPath('temp'), 'yizhun-images');
+      if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+      const tmpPath = path.join(tmpDir, `compressed_${Date.now()}.jpg`);
+      fs.writeFileSync(tmpPath, jpegBuf);
+      return { success: true, path: tmpPath, size: jpegBuf.length };
+    } catch (err) {
+      console.error('[compress-image]', err.message);
+      return { success: false, error: err.message };
     }
   });
 

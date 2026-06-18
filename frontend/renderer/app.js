@@ -58,8 +58,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadConfig();
   await loadScripts();
   checkWxStatus();
-  loadScheduledTasks();
-  setInterval(loadScheduledTasks, 30000);
+  loadBroadcastScheduledTasks();
+  startBroadcastSchedulePoll();
 });
 
 // ============================================================
@@ -180,10 +180,47 @@ function showImagePreview(src, imgId, iconId, textId) {
   const img = document.getElementById(imgId);
   const icon = document.getElementById(iconId);
   const text = document.getElementById(textId);
-  img.src = src;
-  img.classList.remove('hidden');
+
+  // 不直接加载原图（大图卡死 UI），占位显示文件名，异步尝试缩略图
+  img.style.display = 'none';
+  const wrap = document.getElementById('imagePreviewWrap');
+  if (wrap) {
+    let infoEl = document.getElementById('imagePreviewInfo');
+    if (!infoEl) {
+      infoEl = document.createElement('div');
+      infoEl.id = 'imagePreviewInfo';
+      infoEl.style.cssText = 'font-size:12px;color:var(--text);text-align:center;padding:8px 12px;word-break:break-all;max-width:100%;';
+      wrap.appendChild(infoEl);
+    }
+    const name = src.split(/[/\\]/).pop() || src;
+    infoEl.textContent = '\uD83D\uDDBC ' + name;
+    wrap.classList.remove('hidden');
+    // 异步小缩略图（失败不影响体验）
+    if (window.electronAPI && window.electronAPI.getThumbnail) {
+      requestAnimationFrame(() => {
+        window.electronAPI.getThumbnail(src, 200).then(r => {
+          if (r.dataUrl) { img.style.display = ''; img.src = r.dataUrl; infoEl.remove(); }
+        }).catch(() => {});
+      });
+    }
+  }
   if (icon) icon.classList.add('hidden');
   if (text) text.classList.add('hidden');
+}
+
+function clearBroadcastImage() {
+  state.imagePath = null;
+  const img = document.getElementById('imagePreview');
+  const wrap = document.getElementById('imagePreviewWrap');
+  const icon = document.getElementById('uploadIcon');
+  const text = document.getElementById('uploadText');
+  if (img) { img.src = ''; img.style.display = ''; }
+  if (wrap) wrap.classList.add('hidden');
+  const infoEl = document.getElementById('imagePreviewInfo');
+  if (infoEl) infoEl.remove();
+  if (icon) icon.classList.remove('hidden');
+  if (text) text.classList.remove('hidden');
+  toast('图片已清除');
 }
 
 // ============================================================
@@ -341,12 +378,47 @@ function _getTargets() {
   return { targets, sendMode, manualTargets, selectedTargets };
 }
 
+async function _checkImageFile(imagePath) {
+  // 通过 IPC 验证文件存在 + 大小，超过 2MB 自动压缩（避免 wxauto SendFiles 静默失败）
+  if (!window.electronAPI || !window.electronAPI.getFileSize) return {};
+  try {
+    const r = await window.electronAPI.getFileSize(imagePath);
+    if (r.size < 0) return { error: '图片文件不存在，请重新选择' };
+    if (r.size === 0) return { error: '图片文件为空，请重新选择' };
+    if (r.size > 25 * 1024 * 1024) {
+      const mb = (r.size / 1024 / 1024).toFixed(1);
+      return { error: `图片过大 (${mb}MB)，微信单张上限约 25MB` };
+    }
+    // 大于 5MB 自动压缩（wxauto SendFiles 对大文件高概率失败）
+    if (r.size > 1 * 1024 * 1024 && window.electronAPI.compressImage) {
+      const comp = await window.electronAPI.compressImage(imagePath);
+      if (comp.success) {
+        const mbBefore = (r.size / 1024 / 1024).toFixed(1);
+        const mbAfter = (comp.size / 1024 / 1024).toFixed(1);
+        return { size: comp.size, compressedPath: comp.path, note: `已自动压缩 ${mbBefore}MB → ${mbAfter}MB` };
+      }
+    }
+    return { size: r.size };
+  } catch (_) { return {}; }
+}
+
 async function doBroadcast() {
   const { targets, sendMode } = _getTargets();
   const message = document.getElementById('copyText').value.trim();
 
   if (targets.length === 0) return toast('请输入收件人（逗号分隔）');
   if (!message && !state.imagePath) return toast('请至少输入发送内容或上传图片');
+
+  // 图片大小检查 + 自动压缩（避免 wxauto 对大图静默失败）
+  let sendImagePath = state.imagePath;
+  if (state.imagePath) {
+    const checked = await _checkImageFile(state.imagePath);
+    if (checked.error) return toast(checked.error);
+    if (checked.compressedPath) {
+      sendImagePath = checked.compressedPath;
+      if (checked.note) toast(checked.note);
+    }
+  }
 
   const sendBtn = document.getElementById('sendBtn');
   sendBtn.textContent = '处理中...';
@@ -355,9 +427,9 @@ async function doBroadcast() {
 
   try {
     if (state.sendMode === 'scheduled') {
-      await doScheduledSend(targets, message);
+      await doScheduledSend(targets, message, sendImagePath);
     } else {
-      await doImmediateSend(targets, message, sendMode);
+      await doImmediateSend(targets, message, sendMode, sendImagePath);
     }
   } finally {
     updateSendUI();
@@ -366,7 +438,7 @@ async function doBroadcast() {
   }
 }
 
-async function doImmediateSend(targets, message, sendMode = 'default') {
+async function doImmediateSend(targets, message, sendMode = 'default', imagePath = null) {
   const interval = parseFloat(document.getElementById('sendInterval').value) || 0.8;
 
   try {
@@ -377,7 +449,7 @@ async function doImmediateSend(targets, message, sendMode = 'default') {
       body: JSON.stringify({
         targets,
         message,
-        image_path: state.imagePath || null,
+        image_path: imagePath || state.imagePath || null,
         interval,
         send_mode: sendMode
       })
@@ -404,7 +476,7 @@ async function doImmediateSend(targets, message, sendMode = 'default') {
   }
 }
 
-async function doScheduledSend(targets, message) {
+async function doScheduledSend(targets, message, imagePath = null) {
   const scheduledAt = document.getElementById('scheduledTime').value;
   if (!scheduledAt) return toast('请选择定时发送时间');
 
@@ -415,14 +487,14 @@ async function doScheduledSend(targets, message) {
       body: JSON.stringify({
         targets,
         message,
-        image_path: state.imagePath || null,
+        image_path: imagePath || state.imagePath || null,
         scheduled_at: scheduledAt
       })
     });
     const data = await res.json();
     if (data.success) {
       toast(`定时任务已创建 · ${data.targets_count}人 · ${data.delay_seconds}秒后执行`);
-      loadScheduledTasks();
+      loadBroadcastScheduledTasks();
     } else {
       toast('创建失败: ' + (data.error || '未知错误'));
     }
@@ -432,52 +504,63 @@ async function doScheduledSend(targets, message) {
 }
 
 // ============================================================
-// 定时任务管理
+// 定时任务管理 (群发中心)
 // ============================================================
 
-async function loadScheduledTasks() {
+let _broadcastScheduleTimer = null;
+
+async function loadBroadcastScheduledTasks() {
   try {
     const res = await fetch(`${API}/api/broadcast/schedule`);
     const data = await res.json();
+    const card = document.getElementById('scheduledTasksCard');
     if (data.success && data.tasks && data.tasks.length > 0) {
-      renderScheduledTasks(data.tasks);
-      document.getElementById('scheduledTasksCard').style.display = '';
+      const activeTasks = data.tasks.filter(t => t.status !== 'cancelled');
+      if (activeTasks.length === 0) { card.classList.add('hidden'); return; }
+      renderBroadcastScheduledTasks(data.tasks);
+      card.classList.remove('hidden');
+    } else {
+      card.classList.add('hidden');
     }
   } catch (err) {}
 }
 
-function renderScheduledTasks(tasks) {
+function startBroadcastSchedulePoll() {
+  if (_broadcastScheduleTimer) clearInterval(_broadcastScheduleTimer);
+  loadBroadcastScheduledTasks();
+  _broadcastScheduleTimer = setInterval(loadBroadcastScheduledTasks, 5000);
+}
+
+function renderBroadcastScheduledTasks(tasks) {
   const list = document.getElementById('scheduledTasksList');
-  list.innerHTML = tasks.map(t => {
-    const statusMap = {
-      'pending': { text: '等待中', cls: 'tag-new' },
-      'running': { text: '发送中', cls: 'tag-promo' },
-      'completed': { text: '已完成', cls: '' },
-      'failed': { text: '失败', cls: 'tag-brand' },
-      'cancelled': { text: '已取消', cls: '' },
-    };
+  const activeTasks = tasks.filter(t => t.status !== 'cancelled');
+  const statusMap = {
+    'pending': { text: '等待中', cls: 'tag-pending' },
+    'running': { text: '发送中', cls: 'tag-pending' },
+    'completed': { text: '已完成', cls: 'tag-ok' },
+    'failed': { text: '失败', cls: '' },
+  };
+  list.innerHTML = activeTasks.map(t => {
     const s = statusMap[t.status] || { text: t.status, cls: '' };
-    return `<div class="script-item">
-      <span class="script-tag ${s.cls}">${s.text}</span>
-      <div class="script-text">
-        ${t.message_preview} · ${t.targets_count}人 · ${t.scheduled_at.replace('T', ' ')}
-      </div>
-      <div class="script-actions">
-        ${t.status === 'pending' ? `<div class="icon-btn danger" onclick="cancelTask('${t.id}')" title="取消">&#x2715;</div>` : ''}
-      </div>
+    const timeStr = (t.scheduled_at || '').replace('T', ' ').slice(0, 16);
+    return `<div class="schedule-task-item">
+      <span class="schedule-task-time">${timeStr}</span>
+      <span class="schedule-task-preview">${t.message_preview} · ${t.targets_count}人</span>
+      <span class="schedule-task-status"><span class="tag ${s.cls || ''}" style="font-size:10px">${s.text}</span></span>
+      ${t.status === 'pending' ? `<span class="ico-btn danger" onclick="cancelBroadcastTask('${t.id}')" title="取消" style="font-size:9px;width:20px;height:20px">✕</span>` : ''}
     </div>`;
   }).join('');
 }
 
-async function cancelTask(taskId) {
+async function cancelBroadcastTask(taskId) {
   try {
     const res = await fetch(`${API}/api/broadcast/schedule/${taskId}`, { method: 'DELETE' });
     const data = await res.json();
     if (data.success) {
       toast('任务已取消');
-      loadScheduledTasks();
+      loadBroadcastScheduledTasks();
     } else {
-      toast('取消失败: ' + data.error);
+      toast('取消失败: ' + (data.error || '未知错误'));
     }
   } catch (err) {
     toast('取消失败: ' + err.message);
@@ -559,13 +642,21 @@ function copyToClipboard(id) {
 
 async function loadScripts() {
   try {
-    const res = await fetch(`${API}/api/scripts`);
-    const data = await res.json();
-    if (data.success) {
-      state.scripts = data.scripts;
+    // 纯 IPC 路径，不依赖 backend.exe
+    if (!window.electronAPI || !window.electronAPI.getScripts) {
+      state.scripts = [];
       renderScripts();
+      console.warn('[Scripts] IPC not available');
+      return;
     }
-  } catch (err) {}
+    const result = await window.electronAPI.getScripts();
+    state.scripts = result.scripts || [];
+    renderScripts();
+  } catch (err) {
+    console.error('[Scripts] load error:', err);
+    state.scripts = [];
+    renderScripts();
+  }
 }
 
 function renderScripts() {
@@ -608,21 +699,22 @@ async function saveScript() {
   const text = document.getElementById('newScriptText').value.trim();
   if (!tag || !text) return toast('请填写标签和内容');
   try {
-    const res = await fetch(`${API}/api/scripts`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tag, text })
-    });
-    const data = await res.json();
-    if (data.success) {
+    if (!window.electronAPI || !window.electronAPI.addScript) {
+      toast('IPC 不可用，请重启应用');
+      return;
+    }
+    const result = await window.electronAPI.addScript({ tag, text });
+    if (result.success) {
       toast('话术已添加');
       hideAddScript();
       await loadScripts();
-    } else {
-      toast('添加失败: ' + data.error);
+      return;
     }
+    toast('添加失败: ' + (result.error || '未知错误'));
+    console.error('[Scripts] add error:', result.error);
   } catch (err) {
     toast('添加失败: ' + err.message);
+    console.error('[Scripts] add exception:', err);
   }
 }
 
@@ -646,35 +738,64 @@ async function updateScript() {
   const text = document.getElementById('editScriptText').value.trim();
   if (!tag || !text) return toast('请填写标签和内容');
   try {
-    const res = await fetch(`${API}/api/scripts/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tag, text })
-    });
-    const data = await res.json();
-    if (data.success) {
+    if (!window.electronAPI || !window.electronAPI.updateScript) {
+      toast('IPC 不可用，请重启应用');
+      return;
+    }
+    const result = await window.electronAPI.updateScript(id, { tag, text });
+    if (result.success) {
       toast('话术已更新');
       hideEditScript();
       await loadScripts();
-    } else {
-      toast('更新失败: ' + data.error);
+      return;
     }
+    toast('更新失败: ' + (result.error || '未知错误'));
+    console.error('[Scripts] update error:', result.error);
   } catch (err) {
     toast('更新失败: ' + err.message);
+    console.error('[Scripts] update exception:', err);
   }
 }
 
+// 自定义确认弹窗（避免原生 confirm 导致 Electron 输入框失焦）
+function _showConfirm(msg) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'toast-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-dialog">
+        <div class="confirm-text">${msg}</div>
+        <div class="confirm-actions">
+          <button class="btn btn-ghost" id="confirmCancel">取消</button>
+          <button class="btn btn-primary" id="confirmOk">确定</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#confirmOk').onclick = () => { overlay.remove(); resolve(true); };
+    overlay.querySelector('#confirmCancel').onclick = () => { overlay.remove(); resolve(false); };
+    overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } };
+  });
+}
+
 async function deleteScript(id) {
-  if (!confirm('确定删除这条话术？')) return;
+  const ok = await _showConfirm('确定删除这条话术？');
+  if (!ok) return;
   try {
-    const res = await fetch(`${API}/api/scripts/${id}`, { method: 'DELETE' });
-    const data = await res.json();
-    if (data.success) {
+    if (!window.electronAPI || !window.electronAPI.deleteScript) {
+      toast('IPC 不可用，请重启应用');
+      return;
+    }
+    const result = await window.electronAPI.deleteScript(id);
+    if (result.success) {
       toast('已删除');
       await loadScripts();
+      return;
     }
+    toast('删除失败: ' + (result.error || '未知错误'));
+    console.error('[Scripts] delete error:', result.error);
   } catch (err) {
     toast('删除失败: ' + err.message);
+    console.error('[Scripts] delete exception:', err);
   }
 }
 
@@ -698,6 +819,7 @@ function applyConfig() {
   if (!c) return;
   document.getElementById('aiEnabled').checked = c.ai?.enabled || false;
   document.getElementById('apiUrl').value = c.ai?.api_url || '';
+  document.getElementById('apiKey').value = c.ai?.api_key || '';
   document.getElementById('aiModel').value = c.ai?.model || 'gpt-4o-mini';
   document.getElementById('useScripts').checked = c.fallback?.use_scripts !== false;
   document.getElementById('allowManual').checked = c.fallback?.allow_manual !== false;
@@ -886,6 +1008,31 @@ function showUpdateDialog(updateInfo) {
   dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.remove(); });
 }
 
+// 动态更新版本号显示（从后端获取）
+async function _updateVersionDisplay() {
+  try {
+    if (window.electronAPI && window.electronAPI.getRuntimeMeta) {
+      const meta = await window.electronAPI.getRuntimeMeta();
+      if (meta.frontend_version) {
+        const el = document.getElementById('aboutVersion');
+        if (el) el.textContent = `v${meta.frontend_version} · 2026`;
+        return;
+      }
+    }
+  } catch (_) {}
+  // 回退：后端 health 接口
+  try {
+    const res = await fetch(`${API}/api/health`);
+    const data = await res.json();
+    if (data.status === 'ok' && data.version) {
+      const el = document.getElementById('aboutVersion');
+      if (el) el.textContent = `v${data.version} · 2026`;
+    }
+  } catch (_) {}
+}
+// DOM 加载完成后自动更新版本显示
+document.addEventListener('DOMContentLoaded', _updateVersionDisplay);
+
 function downloadUpdate(url, contentEl) {
   if (!url) return toast('下载链接无效');
   if (!window.electronAPI) { window.open(url, '_blank'); toast('请在浏览器中下载更新包'); return; }
@@ -1027,42 +1174,51 @@ function removeScheduledTask(id) {
 function renderScheduledTasks() {
   const card = document.getElementById('momentScheduledTasksCard');
   const list = document.getElementById('momentScheduledTasksList');
+  const badge = document.getElementById('scheduleBadge');
+  if (!card || !list) return;
   const tasks = loadScheduledTasks().filter(t => t.status !== 'cancelled');
   
-  if (tasks.length === 0) {
-    card.classList.add('hidden');
-    return;
-  }
+  // Only show when tasks exist
+  card.classList.add('hidden');
+  if (badge) badge.classList.add('hidden');
+  
+  if (tasks.length === 0) return;
+  
   card.classList.remove('hidden');
+  if (badge) {
+    const waiting = tasks.filter(t => t.status === 'waiting').length;
+    badge.classList.remove('hidden');
+    badge.textContent = waiting + ' 个待执行';
+  }
   
   const now = Date.now();
   const items = tasks.map(t => {
     const scheduledMs = new Date(t.scheduledAt).getTime();
     const remaining = Math.max(0, scheduledMs - now);
-    let countdown = '';
+    let statusHtml = '';
     if (t.status === 'running') {
-      countdown = '<span style="color:#ff9500">发布中...</span>';
+      statusHtml = '<span class="tag tag-pending">发布中</span>';
     } else if (t.status === 'done') {
-      countdown = '<span style="color:#34c759">已完成</span>';
+      statusHtml = '<span class="tag tag-ok">已完成</span>';
     } else if (remaining <= 0) {
-      countdown = '<span style="color:#ff9500">等待执行...</span>';
+      statusHtml = '<span class="tag tag-pending">执行中</span>';
     } else {
-      const h = Math.floor(remaining / 3600000);
-      const m = Math.floor((remaining % 3600000) / 60000);
+      const m = Math.floor(remaining / 60000);
       const s = Math.floor((remaining % 60000) / 1000);
-      countdown = `⏳ ${h > 0 ? h + '时' : ''}${m}分${s}秒`;
+      statusHtml = `<span style="font-size:10px;color:var(--text3);white-space:nowrap">${m}分${s}秒后</span>`;
     }
-    const preview = (t.text || '无文案').slice(0, 20) + (t.mediaPaths.length > 0 ? ` [${t.mediaPaths.length}张图]` : '');
-    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #eee">
-      <span title="${t.text || ''}">${preview}</span>
-      <span style="display:flex;gap:8px;align-items:center">
-        <span style="font-weight:600;font-size:12px">${countdown}</span>
-        ${t.status === 'waiting' ? `<button class="btn btn-ghost btn-sm" onclick="cancelScheduledTask('${t.id}')" style="font-size:10px;padding:2px 6px">取消</button>` : ''}
-        ${t.status === 'done' ? `<button class="btn btn-ghost btn-sm" onclick="removeScheduledTask('${t.id}')" style="font-size:10px;padding:2px 6px">清除</button>` : ''}
-      </span>
+    const timeStr = new Date(t.scheduledAt).toLocaleString('zh-CN', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+    const mediaCount = t.mediaPaths && t.mediaPaths.length > 0 ? t.mediaPaths.length : 0;
+    const preview = (t.text || '无文案').slice(0, 20) + (mediaCount > 0 ? ` 📷${mediaCount}张图` : '');
+    return `<div class="schedule-task-item">
+      <span class="schedule-task-time">${timeStr}</span>
+      <span class="schedule-task-preview" title="${escapeHtml(t.text || '')}">${escapeHtml(preview)}</span>
+      <span class="schedule-task-status">${statusHtml}</span>
+      ${t.status === 'waiting' ? `<span class="ico-btn danger" onclick="cancelScheduledTask('${t.id}')" title="取消" style="font-size:9px;width:20px;height:20px">✕</span>` : ''}
+      ${t.status === 'done' ? `<span class="ico-btn" onclick="removeScheduledTask('${t.id}')" title="清除" style="font-size:9px;width:20px;height:20px">✕</span>` : ''}
     </div>`;
   }).join('');
-  list.innerHTML = items || '暂无定时任务';
+  list.innerHTML = items;
 }
 
 // ── 倒计时 + 执行调度 ──────────────────
@@ -1189,7 +1345,13 @@ function setMomentPrivacy(mode) {
   momentState.contact = '';
 }
 
+// 防止文件对话框重复打开
+let _momentDialogBusy = false;
+
 async function selectMomentImage() {
+  if (_momentDialogBusy) return;
+  _momentDialogBusy = true;
+  try {
   if (window.electronAPI && window.electronAPI.selectMultipleImages) {
     const paths = await window.electronAPI.selectMultipleImages();
     if (paths && paths.length > 0) {
@@ -1212,8 +1374,9 @@ async function selectMomentImage() {
         } catch (err) { toast('上传失败: ' + err.message); }
       }
     };
-    input.click();
+      input.click();
   }
+  } finally { _momentDialogBusy = false; }
 }
 
 function addMomentImage(path) {
@@ -1234,6 +1397,7 @@ function removeMomentImage(index) {
 }
 
 function renderMomentMediaGrid() {
+  const zone = document.getElementById('momentUploadZone');
   const grid = document.getElementById('momentMediaGrid');
   const icon = document.getElementById('momentUploadIcon');
   const text = document.getElementById('momentUploadText');
@@ -1241,28 +1405,41 @@ function renderMomentMediaGrid() {
   preview.classList.add('hidden');
 
   if (momentState.mediaType === 'video' && momentState.mediaPath) {
+    zone.classList.add('has-media');
     grid.innerHTML = '';
     grid.style.display = 'none';
-    preview.innerHTML = `<span style="font-size:32px">🎬</span><div style="font-size:12px;color:var(--text-secondary)">视频已选择</div>`;
+    preview.innerHTML = `<span style="font-size:32px">🎬</span><div style="font-size:12px;color:var(--text2)">视频已选择</div>`;
     preview.classList.remove('hidden');
     icon?.classList.add('hidden');
     text?.classList.add('hidden');
   } else if (momentState.mediaPaths.length > 0) {
-    grid.style.display = 'grid';
-    grid.innerHTML = momentState.mediaPaths.map((p, i) =>
-      `<div class="grid-item">
-        <img src="file://${p}" alt="pic">
-        <span class="del-btn" data-idx="${i}">✕</span>
-      </div>`
-    ).join('');
-    grid.querySelectorAll('.del-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => { e.stopPropagation(); removeMomentImage(parseInt(btn.dataset.idx)); });
-    });
+    zone.classList.add('has-media');
+    grid.style.display = 'flex';
     icon?.classList.add('hidden');
     text?.classList.add('hidden');
+    // 占位卡（不直接加载 file:// 原图，避免大图卡死 UI）
+    let html = momentState.mediaPaths.map((p, i) => {
+      const name = p.split(/[/\\]/).pop() || p;
+      return `<div class="grid-item" style="font-size:11px;color:var(--text);text-align:center;padding:6px;word-break:break-all;display:flex;flex-direction:column;justify-content:center;overflow:hidden">
+        <span style="font-size:18px;opacity:.6">🖼️</span>
+        <span style="margin-top:2px;line-height:1.2;max-height:2.4em;overflow:hidden">${name}</span>
+        <span class="del-btn" data-idx="${i}">✕</span>
+      </div>`;
+    }).join('');
+    // Add more button
+    if (momentState.mediaPaths.length < 9) {
+      html += `<div class="grid-item add-more" id="momentAddMore">+</div>`;
+    }
+    grid.innerHTML = html;
+    grid.querySelectorAll('.grid-item:not(.add-more) .del-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => { e.stopPropagation(); removeMomentImage(parseInt(btn.dataset.idx)); });
+    });
+    const addMore = document.getElementById('momentAddMore');
+    if (addMore) addMore.addEventListener('click', (e) => { e.stopPropagation(); selectMomentImage(); });
   } else {
+    zone.classList.remove('has-media');
     grid.innerHTML = '';
-    grid.style.display = 'grid';
+    grid.style.display = 'none';
     icon?.classList.remove('hidden');
     text?.classList.remove('hidden');
   }
@@ -1293,12 +1470,20 @@ function clearMomentMedia() {
   momentState.mediaPaths = [];
   momentState.mediaPath = null;
   momentState.mediaType = null;
+  const zone = document.getElementById('momentUploadZone');
+  zone.classList.remove('has-media');
   document.getElementById('momentMediaGrid').innerHTML = '';
-  document.getElementById('momentMediaGrid').style.display = 'grid';
+  document.getElementById('momentMediaGrid').style.display = 'none';
   document.getElementById('momentMediaPreview').innerHTML = '';
   document.getElementById('momentMediaPreview').classList.add('hidden');
   document.getElementById('momentUploadIcon')?.classList.remove('hidden');
   document.getElementById('momentUploadText')?.classList.remove('hidden');
+}
+
+// 点击上传区统一触发选图
+async function handleMomentMediaClick(e) {
+  if (e.target.closest('.del-btn') || e.target.closest('.media-chip') || e.target.closest('.add-more')) return;
+  await selectMomentImage();
 }
 
 async function generateMomentCopy() {
@@ -1391,9 +1576,9 @@ function updateMomentTaskUI(task) {
   };
   const s = statusTexts[task.status] || { text: task.status, cls: 'pending' };
   document.getElementById('momentTaskStatus').innerHTML = `
-    <span style="font-size:12px;color:var(--text-secondary)">任务 ${task.task_id || momentTaskId}</span>
+    <span style="font-size:12px;color:var(--text2)">任务 ${task.task_id || momentTaskId}</span>
     <span class="task-status ${s.cls}" style="margin-left:8px">${s.text}</span>
-    ${task.current_step ? `<span style="margin-left:8px;font-size:11px;color:var(--text-secondary)">步骤: ${escapeHtml(task.current_step)}</span>` : ''}
+    ${task.current_step ? `<span style="margin-left:8px;font-size:11px;color:var(--text2)">步骤: ${escapeHtml(task.current_step)}</span>` : ''}
   `;
 
   // steps
