@@ -21,10 +21,21 @@ app.on('second-instance', () => {
   }
 });
 
+// ── 抑制空白弹窗（渲染进程崩溃/未捕获异常不弹错误窗）──
+app.on('render-process-gone', (event, webContents, details) => {
+  console.error('[Main] Renderer gone:', details.reason, details.exitCode);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  }
+});
+process.on('uncaughtException', (err) => {
+  console.error('[Main] Uncaught:', err.message);
+});
+
 // ── Preview 常量 ──────────────────────────────────────────
 const BACKEND_PORT = 5680;
 const EXPECTED_CHANNEL = 'preview';
-const EXPECTED_VERSION = '2.2.1';
+const EXPECTED_VERSION = '2.2.2';
 
 let mainWindow;
 let backendProcess;
