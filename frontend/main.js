@@ -7,6 +7,7 @@ const { spawn, execFile } = require('child_process');
 const https = require('https');
 const fs = require('fs');
 const os = require('os');
+const aiService = require(path.join(__dirname, 'ai-service.js'));
 
 // ── 单实例锁（防止双开）──
 const gotLock = app.requestSingleInstanceLock();
@@ -35,7 +36,7 @@ process.on('uncaughtException', (err) => {
 // ── Preview 常量 ──────────────────────────────────────────
 const BACKEND_PORT = 5680;
 const EXPECTED_CHANNEL = 'preview';
-const EXPECTED_VERSION = '2.2.2';
+const EXPECTED_VERSION = '3.0.0';
 
 let mainWindow;
 let backendProcess;
@@ -517,6 +518,252 @@ function createWindow() {
 
   // 打开外部链接
   ipcMain.on('open-url', (event, url) => shell.openExternal(url));
+
+  // ═══════════════════════════════════════════════════
+  //  AI 创意中心 — 配置管理
+  // ═══════════════════════════════════════════════════
+  function _getAIConfigPath() {
+    const dataDir = path.join(app.getPath('appData'), 'yizhun-wechat-bot-preview');
+    if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+    return path.join(dataDir, 'config.json');
+  }
+  function _loadAIConfig() {
+    const p = _getAIConfigPath();
+    if (!fs.existsSync(p)) return {};
+    const raw = fs.readFileSync(p, 'utf-8');
+    try { return JSON.parse(raw); } catch (_) { return null; }  // null = 解析失败（数据损坏，保护不写入）
+  }
+  function _saveAIConfig(obj) {
+    const p = _getAIConfigPath();
+    fs.writeFileSync(p, JSON.stringify(obj, null, 2), 'utf-8');
+  }
+
+  ipcMain.handle('ai-get-config', async () => {
+    try {
+      const full = _loadAIConfig() || {};
+      return {
+        success: true,
+        config: {
+          ai: full.ai || {},
+          ai_image: full.ai_image || {},
+          ai_video: full.ai_video || {},
+        },
+      };
+    } catch (e) { return { success: false, error: e.message }; }
+  });
+
+  ipcMain.handle('ai-save-config', async (event, { section, data }) => {
+    try {
+      let full = _loadAIConfig();
+      // 安全保护：config.json 不存在或损坏时绝不覆盖写入
+      if (full === null) {
+        const p = _getAIConfigPath();
+        if (!fs.existsSync(p)) {
+          full = {};  // 文件不存在 → 允许创建新文件
+        } else {
+          return { success: false, error: 'config.json 读取失败，为保护已有配置，本次写入已取消' };
+        }
+      }
+      full[section] = { ...(full[section] || {}), ...data };
+      _saveAIConfig(full);
+      return { success: true };
+    } catch (e) { return { success: false, error: e.message }; }
+  });
+
+  // 确保 AI 媒体临时目录存在
+  function _ensureAITmpDir() {
+    const tmpDir = path.join(app.getPath('temp'), 'yizhun-ai-media');
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+    return tmpDir;
+  }
+
+  // ── AbortController 管理（支持停止生成）──
+  let _aiAbortController = null;
+
+  ipcMain.handle('ai-abort', async () => {
+    if (_aiAbortController) {
+      _aiAbortController.abort();
+      _aiAbortController = null;
+      return { success: true };
+    }
+    return { success: false, error: '没有正在进行的请求' };
+  });
+
+  // ═══════════════════════════════════════════════════
+  //  AI 创意中心 — 对话式生文
+  // ═══════════════════════════════════════════════════
+  ipcMain.handle('ai-chat', async (event, { sessionId, messages, config, searchEnabled }) => {
+    try {
+      const cfg = config || ((_loadAIConfig() || {}).ai || {});
+      if (!cfg.api_key) return { success: false, error: '请先在设置中配置语言大模型 API Key' };
+      if (!messages || !Array.isArray(messages) || messages.length === 0) {
+        return { success: false, error: '消息列表为空' };
+      }
+
+      // 处理参考图：将 refPath 转为 vision 格式的 base64
+      const processedMessages = [];
+      for (const m of messages) {
+        if (m.role === 'user' && m.refPath && fs.existsSync(m.refPath)) {
+          try {
+            const buf = fs.readFileSync(m.refPath);
+            const ext = path.extname(m.refPath).toLowerCase();
+            const mimeMap = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.bmp': 'image/bmp', '.gif': 'image/gif' };
+            const mime = mimeMap[ext] || 'image/jpeg';
+            const dataUrl = `data:${mime};base64,${buf.toString('base64')}`;
+            processedMessages.push({
+              role: 'user',
+              content: [
+                { type: 'text', text: m.content || '请描述这张图片' },
+                { type: 'image_url', image_url: { url: dataUrl } },
+              ],
+            });
+          } catch (imgErr) {
+            console.error('[ai-chat] 参考图读取失败:', imgErr.message);
+            processedMessages.push({ role: m.role, content: m.content + '\n[图片读取失败: ' + m.refPath + ']' });
+          }
+        } else {
+          processedMessages.push({ role: m.role, content: m.content });
+        }
+      }
+
+      // 联网搜索：从最后一条用户消息提取搜索词，注入结果到系统提示
+      if (searchEnabled) {
+        const lastUser = [...processedMessages].reverse().find(m => m.role === 'user');
+        if (lastUser) {
+          const query = typeof lastUser.content === 'string' ? lastUser.content : (lastUser.content?.[0]?.text || '');
+          if (query) {
+            try {
+              const searchResults = await aiService.webSearch(query, 3);
+              if (searchResults.length > 0) {
+                const searchText = searchResults.map((r, i) => `${i + 1}. ${r.snippet}`).join('\n');
+                processedMessages.unshift({
+                  role: 'system',
+                  content: `以下是与用户问题相关的实时网络搜索结果，请参考这些信息回答：\n${searchText}`,
+                });
+              }
+            } catch (_) {}
+          }
+        }
+      }
+
+      _aiAbortController = new AbortController();
+      const result = await aiService.chatCompletion(cfg, processedMessages, _aiAbortController.signal);
+      _aiAbortController = null;
+      return result;
+    } catch (e) {
+      _aiAbortController = null;
+      if (e.message === 'aborted') return { success: false, error: '已停止' };
+    }
+  });
+
+  // ═══════════════════════════════════════════════════
+  //  AI 创意中心 — 生图
+  // ═══════════════════════════════════════════════════
+  ipcMain.handle('ai-generate-image', async (event, { prompt, options, config }) => {
+    try {
+      const cfg = config || ((_loadAIConfig() || {}).ai_image || {});
+      if (!cfg.api_key) return { success: false, error: '请先在设置中配置生图大模型 API Key' };
+
+      // 处理参考图 base64
+      const opts = { ...options };
+      if (opts.reference_image_path) {
+        try {
+          const buf = fs.readFileSync(opts.reference_image_path);
+          const ext = path.extname(opts.reference_image_path).toLowerCase();
+          const mimeMap = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.bmp': 'image/bmp' };
+          const mime = mimeMap[ext] || 'image/jpeg';
+          opts.reference_image_base64 = `data:${mime};base64,${buf.toString('base64')}`;
+        } catch (imgErr) { console.error('[ai-generate-image] 参考图读取失败:', imgErr.message); }
+      }
+
+      _aiAbortController = new AbortController();
+      const result = await aiService.generateImage(cfg, prompt, opts, _aiAbortController.signal);
+      _aiAbortController = null;
+      if (!result.success) return result;
+
+      // 下载生成的图片到本地临时目录
+      const tmpDir = _ensureAITmpDir();
+      const localPaths = [];
+      for (const img of result.images) {
+        if (img.url) {
+          try {
+            const localPath = await aiService.downloadToTemp(img.url, tmpDir, 'img_');
+            localPaths.push({ url: img.url, local_path: localPath });
+          } catch (e) {
+            console.error('[ai-generate-image] download failed:', e.message);
+            // 下载失败不阻塞，仍保留 url
+            localPaths.push({ url: img.url, local_path: null });
+          }
+        }
+      }
+      return { success: true, images: localPaths };
+    } catch (e) {
+      _aiAbortController = null;
+      if (e.message === 'aborted') return { success: false, error: '已停止' };
+      return { success: false, error: `生图失败: ${e.message}` };
+    }
+  });
+
+  // ── 选择单张图片（生图/生视频参考图用）──
+  ipcMain.handle('select-reference-image', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'bmp', 'webp'] }],
+    });
+    return result.canceled ? null : result.filePaths[0];
+  });
+
+  // ═══════════════════════════════════════════════════
+  //  AI 创意中心 — 生视频
+  // ═══════════════════════════════════════════════════
+  ipcMain.handle('ai-create-video-task', async (event, { prompt, options, config }) => {
+    try {
+      const cfg = config || ((_loadAIConfig() || {}).ai_video || {});
+      if (!cfg.api_key) return { success: false, error: '请先在设置中配置生视频大模型 API Key' };
+
+      const opts = { ...options };
+      if (opts.reference_image_path) {
+        try {
+          const buf = fs.readFileSync(opts.reference_image_path);
+          const ext = path.extname(opts.reference_image_path).toLowerCase();
+          const mimeMap = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.bmp': 'image/bmp' };
+          const mime = mimeMap[ext] || 'image/jpeg';
+          opts.reference_image_base64 = `data:${mime};base64,${buf.toString('base64')}`;
+        } catch (imgErr) { console.error('[ai-generate-image] 参考图读取失败:', imgErr.message); }
+      }
+
+      _aiAbortController = new AbortController();
+      const result = await aiService.createVideoTask(cfg, prompt, opts, _aiAbortController.signal);
+      _aiAbortController = null;
+      return result;
+    } catch (e) {
+      _aiAbortController = null;
+      if (e.message === 'aborted') return { success: false, error: '已停止' };
+      return { success: false, error: `创建视频任务失败: ${e.message}` };
+    }
+  });
+
+  ipcMain.handle('ai-poll-video-task', async (event, { taskId, config }) => {
+    try {
+      const cfg = config || ((_loadAIConfig() || {}).ai_video || {});
+      _aiAbortController = new AbortController();
+      const result = await aiService.pollVideoTask(cfg, taskId, _aiAbortController.signal);
+      _aiAbortController = null;
+      // 如果完成且有视频 URL，下载到本地
+      if (result.success && result.status === 'completed' && result.video_url) {
+        try {
+          const tmpDir = _ensureAITmpDir();
+          const localPath = await aiService.downloadToTemp(result.video_url, tmpDir, 'vid_');
+          result.local_path = localPath;
+        } catch (e) {
+          console.error('[ai-poll-video-task] download failed:', e.message);
+        }
+      }
+      return result;
+    } catch (e) {
+      return { success: false, status: 'error', error: `查询视频失败: ${e.message}` };
+    }
+  });
 
   // 下载更新包
   ipcMain.handle('download-update', async (event, downloadUrl) => {

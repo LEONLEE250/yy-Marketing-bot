@@ -22,4 +22,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getFileSize: (path) => ipcRenderer.invoke('get-file-size', path),
   getThumbnail: (path, maxWidth) => ipcRenderer.invoke('get-thumbnail', path, maxWidth),
   compressImage: (path) => ipcRenderer.invoke('compress-image', path),
+
+  // ── AI 创意中心 ──
+  aiChat: (data) => ipcRenderer.invoke('ai-chat', data),
+  aiGenerateImage: (data) => ipcRenderer.invoke('ai-generate-image', data),
+  aiCreateVideoTask: (data) => ipcRenderer.invoke('ai-create-video-task', data),
+  aiPollVideoTask: (data) => ipcRenderer.invoke('ai-poll-video-task', data),
+  aiAbort: () => ipcRenderer.invoke('ai-abort'),
+  aiGetConfig: () => ipcRenderer.invoke('ai-get-config'),
+  aiSaveConfig: (data) => ipcRenderer.invoke('ai-save-config', data),
+  selectReferenceImage: () => ipcRenderer.invoke('select-reference-image'),
 });

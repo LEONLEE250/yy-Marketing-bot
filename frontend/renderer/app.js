@@ -57,6 +57,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('copyText')?.addEventListener('input', updateSendInfo);
   await loadConfig();
   await loadScripts();
+  await loadAIConfigs();  // v2.3 AI 配置懒加载（不影响现有流程）
   checkWxStatus();
   loadBroadcastScheduledTasks();
   startBroadcastSchedulePoll();
@@ -94,7 +95,9 @@ function setupPills() {
 }
 
 function setupStylePills() {
-  document.getElementById('stylePills').addEventListener('click', (e) => {
+  const el = document.getElementById('stylePills');
+  if (!el) return;
+  el.addEventListener('click', (e) => {
     if (e.target.classList.contains('pill')) {
       state.selectedStyle = e.target.dataset.style;
     }
@@ -572,7 +575,7 @@ async function cancelBroadcastTask(taskId) {
 // ============================================================
 
 async function generateCopy() {
-  const context = document.getElementById('copyText').value.trim();
+  const context = (document.getElementById('copyText')?.value || '').trim();
   if (!context) return toast('请输入场景描述或已有内容');
   try {
     const res = await fetch(`${API}/api/copy/generate`, {
@@ -582,10 +585,12 @@ async function generateCopy() {
     });
     const data = await res.json();
     if (data.success) {
-      document.getElementById('copyText').value = data.copy;
+      const ta = document.getElementById('copyText'); if (ta) ta.value = data.copy;
       const badge = document.getElementById('copySourceBadge');
-      badge.textContent = data.source === 'ai' ? 'AI 生成' : data.source === 'scripts' ? '话术库匹配' : '本地生成';
-      badge.className = 'api-badge' + (data.source === 'ai' ? ' ok' : '');
+      if (badge) {
+        badge.textContent = data.source === 'ai' ? 'AI 生成' : data.source === 'scripts' ? '话术库匹配' : '本地生成';
+        badge.className = 'api-badge' + (data.source === 'ai' ? ' ok' : '');
+      }
     } else {
       toast('生成失败: ' + data.error);
     }
@@ -595,7 +600,7 @@ async function generateCopy() {
 }
 
 async function generateAICopy() {
-  const context = document.getElementById('copyContext').value.trim();
+  const context = (document.getElementById('copyContext')?.value || '').trim();
   if (!context) return toast('请输入场景描述');
   try {
     const res = await fetch(`${API}/api/copy/generate`, {
@@ -605,11 +610,13 @@ async function generateAICopy() {
     });
     const data = await res.json();
     if (data.success) {
-      document.getElementById('copyResult').textContent = data.copy;
+      const el1 = document.getElementById('copyResult'); if (el1) el1.textContent = data.copy;
       const badge = document.getElementById('aiSourceBadge');
-      badge.textContent = data.source === 'ai' ? 'AI 生成' : data.source === 'scripts' ? '话术库匹配' : '本地生成';
-      badge.className = 'api-badge' + (data.source === 'ai' ? ' ok' : '');
-      document.getElementById('noApiHint').classList.toggle('hidden', data.source === 'ai');
+      if (badge) {
+        badge.textContent = data.source === 'ai' ? 'AI 生成' : data.source === 'scripts' ? '话术库匹配' : '本地生成';
+        badge.className = 'api-badge' + (data.source === 'ai' ? ' ok' : '');
+      }
+      const hint = document.getElementById('noApiHint'); if (hint) hint.classList.toggle('hidden', data.source === 'ai');
     } else {
       toast('生成失败: ' + data.error);
     }
@@ -619,15 +626,11 @@ async function generateAICopy() {
 }
 
 function useCopyForBroadcast() {
-  const copy = document.getElementById('copyResult').textContent.trim();
+  const el = document.getElementById('copyResult');
+  if (!el) return;
+  const copy = el.textContent.trim();
   if (!copy) return toast('没有可用的文案');
-  document.getElementById('copyText').value = copy;
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelector('.tab[data-tab="0"]').classList.add('active');
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  document.querySelector('[data-panel="0"]').classList.add('active');
-  state.currentTab = 0;
-  updateSendInfo();
+  const ta = document.getElementById('copyText'); if (ta) ta.value = copy;
   toast('文案已填入群发中心');
 }
 
@@ -817,32 +820,34 @@ async function loadConfig() {
 function applyConfig() {
   const c = state.config;
   if (!c) return;
-  document.getElementById('aiEnabled').checked = c.ai?.enabled || false;
-  document.getElementById('apiUrl').value = c.ai?.api_url || '';
-  document.getElementById('apiKey').value = c.ai?.api_key || '';
-  document.getElementById('aiModel').value = c.ai?.model || 'gpt-4o-mini';
-  document.getElementById('useScripts').checked = c.fallback?.use_scripts !== false;
-  document.getElementById('allowManual').checked = c.fallback?.allow_manual !== false;
-  document.getElementById('sendInterval').value = c.broadcast?.interval || 0.8;
-  document.getElementById('excludeList').value = (c.broadcast?.exclude || []).join(', ');
+  const el = (id) => document.getElementById(id);
+  const aiEnabledEl = el('aiEnabled'); if (aiEnabledEl) aiEnabledEl.checked = c.ai?.enabled || false;
+  if (el('apiUrl')) el('apiUrl').value = c.ai?.api_url || '';
+  if (el('apiKey')) el('apiKey').value = c.ai?.api_key || '';
+  if (el('aiModel')) el('aiModel').value = c.ai?.model || '';
+  if (el('useScripts')) el('useScripts').checked = c.fallback?.use_scripts !== false;
+  if (el('allowManual')) el('allowManual').checked = c.fallback?.allow_manual !== false;
+  if (el('sendInterval')) el('sendInterval').value = c.broadcast?.interval || 0.8;
+  if (el('excludeList')) el('excludeList').value = (c.broadcast?.exclude || []).join(', ');
 }
 
 async function saveAllSettings() {
-  const apiKeyInput = document.getElementById('apiKey').value.trim();
+  const getEl = (id) => document.getElementById(id);
+  const apiKeyInput = (getEl('apiKey')?.value || '').trim();
   const config = {
     ai: {
-      enabled: document.getElementById('aiEnabled').checked,
-      api_url: document.getElementById('apiUrl').value.trim(),
+      enabled: getEl('aiEnabled')?.checked ?? true,
+      api_url: (getEl('apiUrl')?.value || '').trim(),
       api_key: apiKeyInput || undefined,
-      model: document.getElementById('aiModel').value,
+      model: getEl('aiModel')?.value || '',
     },
     fallback: {
-      use_scripts: document.getElementById('useScripts').checked,
-      allow_manual: document.getElementById('allowManual').checked,
+      use_scripts: getEl('useScripts')?.checked ?? true,
+      allow_manual: getEl('allowManual')?.checked ?? true,
     },
     broadcast: {
-      interval: parseFloat(document.getElementById('sendInterval').value) || 0.8,
-      exclude: document.getElementById('excludeList').value.split(/[,，]/).map(s => s.trim()).filter(Boolean),
+      interval: parseFloat(getEl('sendInterval')?.value) || 0.8,
+      exclude: (getEl('excludeList')?.value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean),
     }
   };
   Object.keys(config.ai).forEach(k => {
@@ -860,6 +865,7 @@ async function saveAllSettings() {
       state.config = data.config;
       toast('设置已保存');
     }
+    try { await saveAIConfigs(); } catch (_) {}
   } catch (err) {
     toast('保存失败: ' + err.message);
   }
@@ -1501,8 +1507,8 @@ async function generateMomentCopy() {
     });
     const data = await res.json();
     if (data.success) {
-      document.getElementById('momentText').value = data.copy;
-      document.getElementById('momentCharCount').textContent = data.copy.length;
+      const ta = document.getElementById('momentText'); if (ta) ta.value = data.copy;
+      const cc = document.getElementById('momentCharCount'); if (cc) cc.textContent = data.copy.length;
       toast(data.source === 'ai' ? 'AI 已生成' : '话术库匹配');
     } else { toast('生成失败: ' + data.error); }
   } catch (err) { toast('生成失败: ' + err.message); }
@@ -1731,5 +1737,698 @@ async function publishMoment() {
     toast('失败: ' + err.message);
   } finally {
     btn.textContent = orig; btn.disabled = false;
+  }
+}
+
+function escapeHTML(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  AI 创意中心 — 状态管理
+// ═══════════════════════════════════════════════════════════
+function safeErr(e) {
+  if (!e) return '未知错误';
+  if (typeof e === 'string') return e;
+  if (e.message) return e.message;
+  try { return JSON.stringify(e); } catch (_) { return String(e); }
+}
+
+const aiState = {
+  subTab: 0,                    // 0=生文案, 1=生图, 2=生视频
+  searchEnabled: false,         // 联网搜索开关
+  chat:   { messages: [], refPath: null, thinking: false, likedIndex: -1 },
+  image:  { messages: [], refPath: null, thinking: false, likedIndex: -1, selectedSize: '1024x1024' },
+  video:  { messages: [], refPath: null, thinking: false, likedIndex: -1, selectedDuration: 5, taskId: null, pollingTimer: null, resultLocalPath: null },
+};
+
+// ── 工具：取当前模式的 section ──
+function _as() { return [aiState.chat, aiState.image, aiState.video][aiState.subTab]; }
+
+// ═══════════════════════════════════════════════════════════
+//  AI 创意中心 — 子Tab 切换
+// ═══════════════════════════════════════════════════════════
+function setupAISubTabs() {
+  // 子 tab 切换
+  document.querySelectorAll('.ai-subtab').forEach(t => {
+    t.addEventListener('click', () => {
+      const idx = parseInt(t.dataset.aisub);
+      document.querySelectorAll('.ai-subtab').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      aiState.subTab = idx;
+
+      // 显示/隐藏模式参数行
+      document.querySelectorAll('.ai-mode-param-row').forEach(r => r.classList.add('hidden'));
+      const row = document.querySelector(`.ai-mode-param-row[data-aimode="${idx}"]`);
+      if (row) row.classList.remove('hidden');
+
+      // 清空参考图标签（模式切换时重置）
+      aiRemoveRef();
+
+      // 渲染当前模式的消息
+      aiRenderChat();
+    });
+  });
+
+  // 生图尺寸选择
+  const sizePills = document.getElementById('aiImageSizePills');
+  if (sizePills) sizePills.addEventListener('click', e => {
+    if (e.target.classList.contains('pill')) aiState.image.selectedSize = e.target.dataset.size;
+  });
+
+  // 生视频时长选择
+  const durPills = document.getElementById('aiVideoDurationPills');
+  if (durPills) durPills.addEventListener('click', e => {
+    if (e.target.classList.contains('pill')) aiState.video.selectedDuration = parseInt(e.target.dataset.dur) || 5;
+  });
+}
+
+// 输入框 Enter 发送 + 初始化
+document.addEventListener('DOMContentLoaded', () => {
+  const input = document.getElementById('aiChatInput');
+  if (input) input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); aiSendMessage(); }
+  });
+  setupAISubTabs();
+});
+
+// ═══════════════════════════════════════════════════════════
+//  发送 / 停止
+// ═══════════════════════════════════════════════════════════
+
+function _isAiBusy() {
+  return aiState.chat.thinking || aiState.image.thinking || aiState.video.thinking;
+}
+
+async function aiSendMessage() {
+  if (_isAiBusy()) { await aiStop(); return; }
+  if (aiState.subTab === 0) await aiChatSend();
+  else if (aiState.subTab === 1) await aiImageSend();
+  else await aiVideoSend();
+}
+
+async function aiStop() {
+  try { await window.electronAPI.aiAbort(); } catch (_) {}
+  const sec = _as();
+  sec.thinking = false;
+  _updateSendBtn();
+  sec.messages.push({ role: 'assistant', content: '⏹ 已停止', time: Date.now(), error: true });
+  if (aiState.subTab === 2) _aiStopVideo();
+  _updateSendBtn();
+  aiRenderChat();
+}
+
+function _updateSendBtn() {
+  const btn = document.getElementById('aiChatSendBtn');
+  if (!btn) return;
+  const busy = _isAiBusy();
+  btn.textContent = busy ? '⏹ 停止' : '发送';
+  btn.className = busy ? 'btn btn-sm ai-send-btn btn-danger' : 'btn btn-primary btn-sm ai-send-btn';
+}
+
+// ── 生文案发送 ──
+async function aiChatSend() {
+  const input = document.getElementById('aiChatInput');
+  const text = input.value.trim();
+  const sec = aiState.chat;
+  if (!text && !sec.refPath) return;
+  if (sec.thinking) return;
+
+  sec.messages.push({ role: 'user', content: text, time: Date.now(), refPath: sec.refPath });
+  input.value = '';
+  aiRemoveRef();
+  sec.thinking = true;
+  _updateSendBtn();
+  aiRenderChat();
+
+  let result;
+  try { result = await window.electronAPI.aiChat({ sessionId: 'default', messages: _chatMsgs(), searchEnabled: aiState.searchEnabled }); }
+  catch (e) { result = { success: false, error: e.message }; }
+
+  sec.thinking = false;
+  _updateSendBtn();
+  if (result.success) {
+    sec.messages.push({ role: 'assistant', content: result.content, time: Date.now() });
+  } else {
+    sec.messages.push({ role: 'assistant', content: '❌ ' + safeErr(result.error), time: Date.now(), error: true });
+  }
+  aiRenderChat();
+}
+
+function _chatMsgs() {
+  const msgs = [{ role: 'system', content: '你是壹准二手手机店的营销文案助手。根据用户内容生成适合微信营销的文案，保持亲切自然，可带 emoji。' }];
+  for (const m of aiState.chat.messages) {
+    // 保留 refPath，由 main.js 转为 Vision base64（不在此处转文本）
+    msgs.push({ role: m.role, content: m.content, refPath: m.refPath || null });
+  }
+  return msgs;
+}
+
+// ── 生图发送 ──
+async function aiImageSend() {
+  const input = document.getElementById('aiChatInput');
+  const text = input.value.trim();
+  const sec = aiState.image;
+  if (!text && !sec.refPath) return;
+  if (sec.thinking) return;
+
+  sec.messages.push({ role: 'user', content: text || '生成图片', time: Date.now(), refPath: sec.refPath });
+  input.value = '';
+  sec.thinking = true;
+  _updateSendBtn();
+  aiRenderChat();
+
+  const getV = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const cfg = { api_url: getV('aiImageApiUrl') || undefined, api_key: getV('aiImageApiKey') || undefined, model: getV('aiImageModel') || undefined };
+  const opts = { size: sec.selectedSize };
+  if (sec.refPath) opts.reference_image_path = sec.refPath;
+
+  let result;
+  try { result = await window.electronAPI.aiGenerateImage({ prompt: text || 'generate image', options: opts, config: cfg }); }
+  catch (e) { result = { success: false, error: e.message }; }
+
+  sec.thinking = false;
+  _updateSendBtn();
+  aiRemoveRef();
+
+  if (result.success && result.images && result.images.length > 0) {
+    sec.messages.push({ role: 'assistant', content: '已生成图片', time: Date.now(), type: 'image', images: result.images });
+  } else {
+    sec.messages.push({ role: 'assistant', content: '❌ 生成失败: ' + safeErr(result.error), time: Date.now(), error: true });
+  }
+  aiRenderChat();
+}
+
+// ── 生视频发送 ──
+async function aiVideoSend() {
+  const input = document.getElementById('aiChatInput');
+  const text = input.value.trim();
+  const sec = aiState.video;
+  if (!text) return;
+  if (sec.thinking) return;
+
+  sec.messages.push({ role: 'user', content: text, time: Date.now(), refPath: sec.refPath });
+  input.value = '';
+  sec.thinking = true;
+  _updateSendBtn();
+  aiRenderChat();
+
+  document.getElementById('aiVideoProgressCard').classList.remove('hidden');
+  document.getElementById('aiVideoProgressBar').style.width = '5%';
+  document.getElementById('aiVideoProgressText').textContent = '正在提交…';
+
+  const getV = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const cfg = { api_url: getV('aiVideoApiUrl') || undefined, api_key: getV('aiVideoApiKey') || undefined, model: getV('aiVideoModel') || undefined };
+  const opts = { duration: sec.selectedDuration };
+  if (sec.refPath) opts.reference_image_path = sec.refPath;
+
+  let cr;
+  try { cr = await window.electronAPI.aiCreateVideoTask({ prompt: text, options: opts, config: cfg }); }
+  catch (e) { cr = { success: false, error: e.message }; }
+
+  aiRemoveRef();
+
+  if (!cr.success || !cr.task_id) {
+    sec.thinking = false;
+  _updateSendBtn();
+    document.getElementById('aiVideoProgressText').textContent = '提交失败: ' + safeErr(cr.error);
+    sec.messages.push({ role: 'assistant', content: '❌ 创建失败: ' + safeErr(cr.error), time: Date.now(), error: true });
+    aiRenderChat();
+    return;
+  }
+
+  sec.taskId = cr.task_id;
+  document.getElementById('aiVideoProgressBar').style.width = '10%';
+  document.getElementById('aiVideoProgressText').textContent = '生成中，预计 2-5 分钟…';
+  _aiPollVideoLoop();
+}
+
+async function _aiPollVideoLoop() {
+  const sec = aiState.video;
+  if (!sec.taskId) return;
+  try {
+    const r = await window.electronAPI.aiPollVideoTask({ taskId: sec.taskId });
+    const bar = document.getElementById('aiVideoProgressBar');
+    const text = document.getElementById('aiVideoProgressText');
+
+    if (!r.success) {
+      text.textContent = '查询失败: ' + safeErr(r.error);
+      sec.thinking = false;
+  _updateSendBtn();
+      sec.messages.push({ role: 'assistant', content: '❌ 视频失败: ' + safeErr(r.error), time: Date.now(), error: true });
+      aiRenderChat(); _aiStopVideo();
+    } else if (r.status === 'completed') {
+      bar.style.width = '100%'; text.textContent = '完成！';
+      sec.thinking = false;
+  _updateSendBtn(); sec.resultLocalPath = r.local_path;
+      sec.messages.push({ role: 'assistant', content: '视频已生成', time: Date.now(), type: 'video', localPath: r.local_path, videoUrl: r.video_url });
+      aiRenderChat(); _aiStopVideo();
+    } else if (r.status === 'failed') {
+      text.textContent = '失败: ' + safeErr(r.error);
+      sec.thinking = false;
+  _updateSendBtn();
+      sec.messages.push({ role: 'assistant', content: '❌ 视频失败: ' + safeErr(r.error), time: Date.now(), error: true });
+      aiRenderChat(); _aiStopVideo();
+    } else {
+      bar.style.width = Math.min((parseFloat(bar.style.width) || 10) + 8, 85) + '%';
+      text.textContent = '生成中，预计还需 1-3 分钟…';
+      sec.pollingTimer = setTimeout(_aiPollVideoLoop, 8000);
+    }
+  } catch (e) {
+    document.getElementById('aiVideoProgressText').textContent = '轮询出错: ' + e.message;
+    const s = aiState.video; s.thinking = false;
+    s.messages.push({ role: 'assistant', content: '❌ 轮询出错: ' + e.message, time: Date.now(), error: true });
+    aiRenderChat(); _aiStopVideo();
+  }
+}
+
+function _aiStopVideo() {
+  const sec = aiState.video;
+  if (sec.pollingTimer) { clearTimeout(sec.pollingTimer); sec.pollingTimer = null; }
+  document.getElementById('aiVideoProgressCard').classList.add('hidden');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  渲染聊天
+// ═══════════════════════════════════════════════════════════
+function aiRenderChat() {
+  const area = document.getElementById('aiChatArea');
+  const empty = document.getElementById('aiChatEmpty');
+  const actions = document.getElementById('aiChatActions');
+  const sec = _as();
+
+  area.querySelectorAll('.ai-msg, .ai-msg-actions').forEach(m => m.remove());
+
+  if (sec.messages.length === 0 && !sec.thinking) {
+    empty.classList.remove('hidden');
+    actions.classList.add('hidden');
+    const icons = ['💬', '🎨', '🎬'];
+    const hints = [
+      '输入你的需求，AI 帮你写营销文案<br>支持连续对话，不满意可继续修改',
+      '描述你想生成的图片<br>支持连续对话，可上传参考图进行图生图',
+      '描述你想生成的视频内容<br>支持连续对话，可上传首帧图',
+    ];
+    empty.querySelector('.ai-chat-empty-icon').textContent = icons[aiState.subTab];
+    empty.querySelector('.ai-chat-empty-text').innerHTML = hints[aiState.subTab];
+    return;
+  }
+  empty.classList.add('hidden');
+
+  let html = '';
+  for (let i = 0; i < sec.messages.length; i++) {
+    const m = sec.messages[i];
+    const isUser = m.role === 'user';
+    html += '<div class="ai-msg ' + (isUser ? 'user' : 'assistant') + '">';
+    html += '<div class="ai-msg-avatar">' + (isUser ? '👤' : '🤖') + '</div>';
+    html += '<div class="ai-msg-bubble">' + escapeHTML(m.content || '');
+    // 用户消息：显示参考图缩略图
+    if (isUser && m.refPath) {
+      html += '<div class="ai-msg-ref-thumb" onclick="aiShowLightbox(\'img\',\'file://' + m.refPath + '\')"><img src="file://' + m.refPath + '" /></div>';
+    }
+    if (m.type === 'image' && m.images) {
+      html += '<div class="ai-msg-media ai-img-grid">';
+      m.images.forEach((img, j) => {
+        const src = img.local_path ? 'file://' + img.local_path : img.url;
+        html += '<img src="' + src + '" onclick="event.stopPropagation(); aiImgClick(' + i + ',' + j + '); aiShowLightbox(\'img\',\'' + src + '\')" class="' + (m.selectedIdx === j ? 'selected' : '') + '" onerror="this.style.display=\'none\'" />';
+      });
+      html += '</div>';
+    }
+    if (m.type === 'video') {
+      const src = m.localPath ? 'file://' + m.localPath : (m.videoUrl || '');
+      html += '<div class="ai-msg-media"><video controls src="' + src + '" onerror="this.style.display=\'none\'"></video></div>';
+    }
+    html += '</div></div>';
+
+    if (!isUser && !m.error) {
+      const liked = sec.likedIndex === i;
+      html += '<div class="ai-msg-actions">';
+      html += '<button class="' + (liked ? 'active' : '') + '" onclick="aiLikeMsg(' + i + ')">👍 满意</button>';
+      html += '<button onclick="aiRetryMsg()">🔄 再改改</button>';
+      html += '</div>';
+    }
+  }
+
+  if (sec.thinking) {
+    const verbs = ['思考', '生成图片', '生成视频'];
+    html += '<div class="ai-msg assistant ai-thinking"><div class="ai-msg-avatar">🤖</div>';
+    html += '<div class="ai-msg-bubble"><span>AI 正在' + verbs[aiState.subTab] + '</span>';
+    html += '<span class="ai-thinking-dots"><span></span><span></span><span></span></span></div></div>';
+  }
+
+  const temp = document.createElement('div');
+  temp.innerHTML = html;
+  while (temp.firstChild) area.appendChild(temp.firstChild);
+  area.scrollTop = area.scrollHeight;
+
+  const hasResult = sec.messages.some(m => m.role === 'assistant' && !m.error);
+  actions.classList.toggle('hidden', !hasResult);
+
+  // 动态更新复制/保存按钮
+  const btn = document.getElementById('aiActionCopySaveBtn');
+  if (btn) {
+    btn.innerHTML = (aiState.subTab === 0) ? '📋 复制' : '💾 保存';
+    btn.onclick = aiCopyResult;
+  }
+}
+
+function aiImgClick(msgIdx, imgIdx) {
+  const sec = _as();
+  const m = sec.messages[msgIdx];
+  if (!m || !m.images) return;
+  m.selectedIdx = (m.selectedIdx === imgIdx) ? -1 : imgIdx;
+  aiRenderChat();
+}
+
+// ── 满意 / 再改改 ──
+function aiLikeMsg(idx) {
+  const sec = _as();
+  sec.likedIndex = (sec.likedIndex === idx) ? -1 : idx;
+  aiRenderChat();
+  if (sec.likedIndex >= 0) toast('已标记为满意');
+}
+function aiRetryMsg() {
+  const sec = _as();
+  if (sec.thinking) return;
+  const input = document.getElementById('aiChatInput');
+  input.value = '请换一种风格重新生成';
+  aiSendMessage();
+}
+
+// ── 清空对话 ──
+function aiClearChat() {
+  const sec = _as();
+  sec.messages = [];
+  sec.likedIndex = -1;
+  sec.thinking = false;
+  _updateSendBtn();
+  if (aiState.subTab === 2) { _aiStopVideo(); aiState.video.taskId = null; aiState.video.resultLocalPath = null; }
+  aiRemoveRef();
+  aiRenderChat();
+  toast('对话已清空');
+}
+
+// ── 复制 / 用于群发 / 用于朋友圈（直接填入 + 跳转）──
+function _switchToTab(idx) {
+  const tabs = document.querySelectorAll('.tab');
+  tabs.forEach(t => t.classList.remove('active'));
+  const target = document.querySelector(`.tab[data-tab="${idx}"]`);
+  if (target) target.classList.add('active');
+  const panels = document.querySelectorAll('.panel');
+  panels.forEach(p => p.classList.remove('active'));
+  const panel = document.querySelector(`[data-panel="${idx}"]`);
+  if (panel) panel.classList.add('active');
+  state.currentTab = idx;
+}
+
+function aiCopyResult() {
+  const sec = _as();
+  const liked = _getLiked(sec);
+  if (!liked) return toast('没有可复制的内容');
+  
+  if (liked.type === 'image' && liked.images) {
+    // 生图：保存图片
+    const img = liked.images[liked.selectedIdx || 0];
+    if (!img) return toast('请先选中一张图片');
+    const p = img.local_path || img.url;
+    if (!p) return toast('图片路径无效');
+    if (window.electronAPI && window.electronAPI.saveFile) {
+      window.electronAPI.saveFile(p).then(r => { if (r) toast('已保存: ' + r); else toast('保存已取消'); });
+    } else {
+      navigator.clipboard.writeText(p).then(() => toast('路径已复制'));
+    }
+  } else if (liked.type === 'video' && liked.localPath) {
+    // 生视频：保存视频
+    if (window.electronAPI && window.electronAPI.saveFile) {
+      window.electronAPI.saveFile(liked.localPath).then(r => { if (r) toast('已保存: ' + r); else toast('保存已取消'); });
+    } else {
+      navigator.clipboard.writeText(liked.localPath).then(() => toast('路径已复制'));
+    }
+  } else {
+    navigator.clipboard.writeText(liked.content || '').then(() => toast('已复制'));
+  }
+}
+
+function aiUseForBroadcast() {
+  const sec = _as();
+  const liked = _getLiked(sec);
+  if (!liked) return toast('没有可用的内容');
+
+  if (liked.type === 'image' && liked.images) {
+    // 生图：填入群发中心图片
+    const img = liked.images[liked.selectedIdx || 0];
+    if (!img) return toast('请先选中一张图片');
+    if (img.local_path) {
+      showImagePreview('file://' + img.local_path, 'imagePreview', 'uploadIcon', 'uploadText');
+      state.imagePath = img.local_path;
+    } else if (img.url) {
+      // local_path 为空时直接用 URL（走 file:// 不支持 URL，用 state 存 URL 标记）
+      state.imagePath = img.url;
+      showImagePreview(img.url, 'imagePreview', 'uploadIcon', 'uploadText');
+    } else {
+      return toast('图片数据无效');
+    }
+    _switchToTab(0);
+    toast('图片已填入群发中心');
+  } else if (liked.type === 'video' && liked.localPath) {
+    // 生视频：填入群发中心
+    state.imagePath = liked.localPath;
+    updateSendInfo();
+    _switchToTab(0);
+    toast('视频路径已填入群发中心');
+  } else {
+    // 生文案：填入文字
+    const ta = document.getElementById('copyText');
+    if (ta) ta.value = liked.content || '';
+    _switchToTab(0);
+    updateSendInfo();
+    toast('文案已填入群发中心');
+  }
+}
+
+function aiUseForMoment() {
+  const sec = _as();
+  const liked = _getLiked(sec);
+  if (!liked) return toast('没有可用的内容');
+
+  if (liked.type === 'image' && liked.images) {
+    // 生图：填入朋友圈媒体
+    const img = liked.images[liked.selectedIdx || 0];
+    if (!img) return toast('请先选中一张图片');
+    const path = img.local_path || img.url;
+    if (!path) return toast('图片数据无效');
+    _addToMomentMedia(path);
+    _switchToTab(1);
+    toast('图片已添加到朋友圈');
+  } else if (liked.type === 'video' && liked.localPath) {
+    _addToMomentMedia(liked.localPath);
+    _switchToTab(1);
+    toast('视频已添加到朋友圈');
+  } else {
+    // 生文案：填入文字
+    const ta = document.getElementById('momentText');
+    if (ta) ta.value = liked.content || '';
+    const cc = document.getElementById('momentCharCount');
+    if (cc) cc.textContent = (liked.content || '').length;
+    _switchToTab(1);
+    toast('文案已填入朋友圈');
+  }
+}
+
+function _addToMomentMedia(filePath) {
+  if (!window.momentState) return;
+  if (!momentState.mediaPaths) momentState.mediaPaths = [];
+  if (momentState.mediaPaths.length >= 9) return toast('朋友圈最多9张/段媒体');
+  momentState.mediaPaths.push(filePath);
+  if (typeof renderMomentMediaGrid === 'function') renderMomentMediaGrid();
+}
+
+function _getLiked(sec) {
+  return sec.likedIndex >= 0 ? sec.messages[sec.likedIndex]
+    : [...sec.messages].reverse().find(m => m.role === 'assistant' && !m.error);
+}
+
+// ── 参考图上传（统一入口）──
+async function aiPickRef() {
+  if (!window.electronAPI || !window.electronAPI.selectReferenceImage) return toast('功能不可用');
+  const p = await window.electronAPI.selectReferenceImage();
+  if (!p) return;
+  const sec = _as();
+  sec.refPath = p;
+  document.getElementById('aiChatImageTag').classList.remove('hidden');
+  document.getElementById('aiChatThumb').src = 'file://' + p;
+}
+function aiRemoveRef() {
+  [aiState.chat, aiState.image, aiState.video].forEach(s => s.refPath = null);
+  document.getElementById('aiChatImageTag').classList.add('hidden');
+  document.getElementById('aiChatThumb').src = '';
+}
+
+// ── 联网搜索开关 ──
+function aiToggleSearch() {
+  aiState.searchEnabled = !aiState.searchEnabled;
+  const btn = document.getElementById('aiSearchToggle');
+  if (btn) btn.style.opacity = aiState.searchEnabled ? '1' : '0.4';
+  toast(aiState.searchEnabled ? '🌐 联网搜索已开启' : '联网搜索已关闭');
+}
+
+// ── 媒体灯箱 ──
+function aiShowLightbox(mode, src) {
+  const box = document.getElementById('aiLightbox');
+  const img = document.getElementById('aiLightboxImg');
+  const vid = document.getElementById('aiLightboxVideo');
+  if (!box) return;
+  box.classList.remove('hidden');
+  if (mode === 'video') {
+    img.style.display = 'none'; vid.style.display = 'block'; vid.src = src;
+  } else {
+    vid.style.display = 'none'; img.style.display = 'block'; img.src = src;
+  }
+}
+function aiHideLightbox() {
+  const box = document.getElementById('aiLightbox');
+  if (box) box.classList.add('hidden');
+}
+
+// ── 点击气泡复制文案 ──
+document.addEventListener('click', e => {
+  const bubble = e.target.closest('.ai-msg-bubble');
+  if (!bubble) return;
+  // 不拦截媒体区域的点击
+  if (e.target.closest('.ai-msg-media') || e.target.closest('video') || e.target.closest('img')) return;
+  // 不拦截 action 按钮
+  if (e.target.closest('.ai-msg-actions')) return;
+  const text = bubble.innerText.trim();
+  if (text && text.length > 3) {
+    navigator.clipboard.writeText(text).then(() => toast('已复制文案'));
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+//  AI 配置管理（独立于 backend，走 main.js IPC）
+// ═══════════════════════════════════════════════════════════
+
+// 加载所有 AI 配置（图片、视频），填入设置页表单
+async function loadAIConfigs() {
+  if (!window.electronAPI || !window.electronAPI.aiGetConfig) return;
+  try {
+    const res = await window.electronAPI.aiGetConfig();
+    if (!res || !res.success || !res.config) return;
+    const c = res.config;
+
+    const setVal = (id, val) => { if (val != null) { const el = document.getElementById(id); if (el) el.value = val; } };
+
+    // 图片配置
+    const img = c.ai_image || {};
+    setVal('aiImageApiUrl', img.api_url || '');
+    setVal('aiImageApiKey', img.api_key || '');
+    setVal('aiImageModel', img.model || '');
+
+    // 视频配置
+    const vid = c.ai_video || {};
+    setVal('aiVideoApiUrl', vid.api_url || '');
+    setVal('aiVideoApiKey', vid.api_key || '');
+    setVal('aiVideoModel', vid.model || '');
+  } catch (_) {}
+}
+
+// 保存单个 AI 模块配置（通过 saveAISettings 调用，或 saveAllSettings 联动）
+async function saveAIConfigs() {
+  if (!window.electronAPI || !window.electronAPI.aiSaveConfig) return;
+  const get = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  try {
+    await window.electronAPI.aiSaveConfig({ section: 'ai_image', data: {
+      api_url: get('aiImageApiUrl'), api_key: get('aiImageApiKey'), model: get('aiImageModel'),
+    }});
+  } catch (_) {}
+  try {
+    await window.electronAPI.aiSaveConfig({ section: 'ai_video', data: {
+      api_url: get('aiVideoApiUrl'), api_key: get('aiVideoApiKey'), model: get('aiVideoModel'),
+    }});
+  } catch (_) {}
+}
+
+// ── 设置页 "保存设置" 按钮（每个模块独立保存 + 测试连接标记）──
+async function saveAISettings(section) {
+  const map = {
+    ai:      { api_url: 'apiUrl',      api_key: 'apiKey',      model: 'aiModel',      badge: 'apiTestBadge' },
+    ai_image:{ api_url: 'aiImageApiUrl',api_key: 'aiImageApiKey',model: 'aiImageModel', badge: 'aiImageTestBadge' },
+    ai_video:{ api_url: 'aiVideoApiUrl',api_key: 'aiVideoApiKey',model: 'aiVideoModel',badge: 'aiVideoTestBadge' },
+  };
+  const m = map[section];
+  if (!m) return;
+
+  const get = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const data = { api_url: get(m.api_url), api_key: get(m.api_key), model: get(m.model) };
+
+  if (!data.api_key) { toast('请填写 API Key'); return; }
+
+  // 如果是语言大模型，走原 config 通道（backend 保存）
+  if (section === 'ai') {
+    // 直接用 saveAllSettings 已包含 ai 保存，这里不再重复
+    // 但独立按钮触发时也走一遍原逻辑
+    const config = {
+      ai: { enabled: true, api_url: data.api_url, api_key: data.api_key, model: data.model },
+      fallback: { use_scripts: document.getElementById('useScripts')?.checked ?? true, allow_manual: document.getElementById('allowManual')?.checked ?? true },
+      broadcast: { interval: parseFloat(document.getElementById('sendInterval')?.value) || 0.8, exclude: (document.getElementById('excludeList')?.value || '').split(/[,，]/).map(s => s.trim()).filter(Boolean) },
+    };
+    Object.keys(config.ai).forEach(k => { if (config.ai[k] === undefined) delete config.ai[k]; });
+    try {
+      const res = await fetch(`${API}/api/config`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(config) });
+      const j = await res.json();
+      if (j.success) { state.config = j.config; toast('语言大模型设置已保存'); }
+      else toast('保存失败: ' + (j.error || ''));
+    } catch (e) { toast('保存失败: ' + e.message); }
+    return;
+  }
+
+  // 图片/视频配置走 IPC
+  if (!window.electronAPI || !window.electronAPI.aiSaveConfig) return;
+  try {
+    await window.electronAPI.aiSaveConfig({ section, data });
+    toast((section === 'ai_image' ? '生图' : '生视频') + '大模型设置已保存');
+  } catch (e) { toast('保存失败: ' + e.message); }
+}
+
+// ── 生图连接测试 ──
+async function testAiImageConnection() {
+  const badge = document.getElementById('aiImageTestBadge');
+  if (!badge) return;
+  const get = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const apiKey = get('aiImageApiKey');
+  if (!apiKey) { badge.textContent = '缺少Key'; badge.className = 'api-badge'; return; }
+  badge.textContent = '测试中…'; badge.className = 'api-badge';
+
+  try {
+    const result = await window.electronAPI.aiGenerateImage({
+      prompt: 'test',
+      options: { size: '256x256' },
+      config: { api_url: get('aiImageApiUrl') || 'https://apihub.agnes-ai.com/v1', api_key: apiKey, model: get('aiImageModel') || 'agnes-image-2.1-flash' },
+    });
+    badge.textContent = result.success ? '连接正常' : '连接失败';
+    badge.className = 'api-badge' + (result.success ? ' ok' : '');
+  } catch (e) {
+    badge.textContent = '连接失败'; badge.className = 'api-badge';
+  }
+}
+
+// ── 生视频连接测试 ──
+async function testAiVideoConnection() {
+  const badge = document.getElementById('aiVideoTestBadge');
+  if (!badge) return;
+  const get = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const apiKey = get('aiVideoApiKey');
+  if (!apiKey) { badge.textContent = '缺少Key'; badge.className = 'api-badge'; return; }
+  badge.textContent = '测试中…'; badge.className = 'api-badge';
+
+  try {
+    const result = await window.electronAPI.aiCreateVideoTask({
+      prompt: 'test',
+      options: { duration: 2 },
+      config: { api_url: get('aiVideoApiUrl') || 'https://apihub.agnes-ai.com/v1', api_key: apiKey, model: get('aiVideoModel') || 'agnes-video-v2.0' },
+    });
+    badge.textContent = (result.success && result.task_id) ? '连接正常' : '连接失败';
+    badge.className = 'api-badge' + ((result.success && result.task_id) ? ' ok' : '');
+  } catch (e) {
+    badge.textContent = '连接失败'; badge.className = 'api-badge';
   }
 }

@@ -25,7 +25,7 @@
     <div class="tabs" id="tabs">
       <button class="tab active" data-tab="0">群发中心</button>
       <button class="tab" data-tab="1">朋友圈</button>
-      <button class="tab" data-tab="2">AI 文案</button>
+      <button class="tab" data-tab="2">AI 创意中心</button>
       <button class="tab" data-tab="3">话术库</button>
       <button class="tab" data-tab="4">设置</button>
     </div>
@@ -56,10 +56,6 @@
           <div class="card">
             <div class="card-label">发送内容</div>
             <textarea class="textarea" id="copyText" placeholder="输入要发送的消息内容..."></textarea>
-            <div class="btn-row">
-              <span class="api-badge" id="copySourceBadge">就绪</span>
-              <button class="btn btn-ghost" onclick="generateCopy()">AI 生成</button>
-            </div>
           </div>
           <div class="card hint-card">
             <div class="hint-text">
@@ -155,7 +151,7 @@
         <p style="font-size:12px;color:var(--text2);margin:0 0 8px">
           先确保微信已打开并登录，支持文字 / 图片 / 视频
         </p>
-        <textarea class="textarea" id="momentText" placeholder="输入朋友圈文字内容，或先点 AI 生成文案..."></textarea>
+        <textarea class="textarea" id="momentText" placeholder="输入朋友圈文字内容..."></textarea>
         <div style="margin-top:4px;font-size:11px;color:var(--text2)">
           <span id="momentCharCount">0</span> / 2000 字
         </div>
@@ -184,7 +180,6 @@
       </div>
 
       <div class="actions">
-        <button class="btn btn-ghost" onclick="generateMomentCopy()">AI 生成文案</button>
         <button class="btn btn-primary" id="momentPublishBtn" onclick="publishMoment()">发布朋友圈</button>
       </div>
 
@@ -213,33 +208,73 @@
       </div>
     </div>
 
-    <!-- Tab 3: AI 文案 (data-panel="2") -->
+    <!-- Tab 2: AI 创意中心 (data-panel="2") -->
     <div class="panel" data-panel="2">
-      <div class="card">
-        <div class="card-label">场景描述</div>
-        <textarea class="textarea" id="copyContext" placeholder="描述你想推广的内容，如：以旧换新活动，旧手机换新机..."></textarea>
-        <div class="pill-group" id="stylePills">
-          <span class="pill active" data-style="朋友圈">朋友圈风</span>
-          <span class="pill" data-style="营销">微信群消息</span>
-          <span class="pill" data-style="简洁">简洁版</span>
-          <span class="pill" data-style="专业">热情营销</span>
+      <!-- 子 Tab -->
+      <div class="ai-subtabs">
+        <button class="ai-subtab active" data-aisub="0">💬 AI生文案</button>
+        <button class="ai-subtab" data-aisub="1">🎨 AI生图</button>
+        <button class="ai-subtab" data-aisub="2">🎬 AI生视频</button>
+      </div>
+
+      <!-- 模式参数（生图尺寸 / 生视频时长） -->
+      <div class="ai-mode-params" id="aiModeParams">
+        <div class="ai-mode-param-row hidden" data-aimode="1">
+          <span class="ai-mode-label">尺寸</span>
+          <div class="pill-group" id="aiImageSizePills">
+            <span class="pill active" data-size="1024x1024">1:1</span>
+            <span class="pill" data-size="1024x768">4:3</span>
+            <span class="pill" data-size="768x1024">3:4</span>
+            <span class="pill" data-size="1792x1024">16:9</span>
+          </div>
         </div>
-        <div class="btn-row">
-          <span class="api-badge" id="aiSourceBadge">就绪</span>
-          <button class="btn btn-primary" onclick="generateAICopy()">生成文案</button>
+        <div class="ai-mode-param-row hidden" data-aimode="2">
+          <span class="ai-mode-label">时长</span>
+          <div class="pill-group" id="aiVideoDurationPills">
+            <span class="pill active" data-dur="5">5秒</span>
+            <span class="pill" data-dur="8">8秒</span>
+            <span class="pill" data-dur="10">10秒</span>
+            <span class="pill" data-dur="15">15秒</span>
+          </div>
         </div>
       </div>
-      <div class="card">
-        <div class="card-label">生成结果</div>
-        <div class="copy-result" id="copyResult" style="min-height:100px;white-space:pre-wrap"></div>
-        <div class="btn-row">
-          <button class="btn btn-ghost" onclick="copyToClipboard('copyResult')">复制</button>
-          <button class="btn btn-ghost" onclick="generateAICopy()">再生成一条</button>
-          <button class="btn btn-primary" onclick="useCopyForBroadcast()">用于群发</button>
+
+      <!-- 共享聊天区 -->
+      <div class="ai-chat-area" id="aiChatArea">
+        <div class="ai-chat-empty" id="aiChatEmpty">
+          <div class="ai-chat-empty-icon">💬</div>
+          <div class="ai-chat-empty-text">输入你的需求，AI 帮你生成内容<br>支持连续对话，不满意可继续修改</div>
         </div>
       </div>
-      <div class="card hint-card" id="noApiHint">
-        <div class="hint-text">当前使用<strong>内置话术库</strong>生成，效果有限。在「设置」中配置 API Key 可解锁 AI 智能生成。</div>
+
+      <!-- 生视频进度（仅生视频模式显示） -->
+      <div class="card hidden" id="aiVideoProgressCard">
+        <div class="card-label">视频生成进度</div>
+        <div class="ai-progress-bar-wrap"><div class="ai-progress-bar" id="aiVideoProgressBar"></div></div>
+        <div class="ai-progress-text" id="aiVideoProgressText"></div>
+      </div>
+
+      <!-- 底部操作栏 -->
+      <div class="ai-chat-actions hidden" id="aiChatActions">
+        <button class="btn btn-ghost btn-sm" id="aiActionCopySaveBtn" onclick="aiCopyResult()">📋 复制</button>
+        <button class="btn btn-ghost btn-sm" onclick="aiUseForBroadcast()">📨 用于群发</button>
+        <button class="btn btn-ghost btn-sm" onclick="aiUseForMoment()">📱 用于朋友圈</button>
+        <button class="btn btn-ghost btn-sm" onclick="aiClearChat()" style="margin-left:auto">🗑 清空对话</button>
+      </div>
+
+      <!-- 输入区 -->
+      <div class="ai-chat-input-row">
+        <button class="btn btn-ghost btn-sm ai-ref-btn" id="aiRefBtn" onclick="aiPickRef()" title="上传参考图">
+          <span class="ai-ref-btn-icon">🖼</span>
+          <span class="ai-ref-btn-text">参考图</span>
+        </button>
+        <div class="ai-chat-image-tag hidden" id="aiChatImageTag">
+          <span class="ai-tag-close" onclick="event.stopPropagation(); aiRemoveRef()">✕</span>
+          <img id="aiChatThumb" />
+        </div>
+        <textarea class="ai-chat-input" id="aiChatInput" placeholder="输入你的需求…（Enter 发送，Shift+Enter 换行）" rows="1"></textarea>
+        <button class="btn btn-ghost btn-sm ai-search-btn" id="aiSearchToggle" onclick="aiToggleSearch()" title="联网搜索">🌐</button>
+        <button class="btn btn-primary btn-sm ai-send-btn" id="aiChatSendBtn" onclick="aiSendMessage()">发送</button>
       </div>
     </div>
 
@@ -278,22 +313,16 @@
       <div class="section-note">话术库用于无 API Key 时的文案兜底，支持 {变量} 占位符。</div>
     </div>
 
-    <!-- Tab 3: 设置 (data-panel="4") -->
+    <!-- Tab 4: 设置 (data-panel="4") -->
     <div class="panel" data-panel="4">
       <div class="two-col">
         <div class="col">
+          <!-- 语言大模型 -->
           <div class="card">
-            <div class="card-label">AI 接口配置</div>
-            <div class="setting-row">
-              <div>
-                <span class="setting-label">启用 AI 文案</span>
-                <span class="setting-sub">关闭后使用话术库 + 手动输入</span>
-              </div>
-              <label class="toggle-switch"><input type="checkbox" id="aiEnabled"><span class="toggle-slider"></span></label>
-            </div>
+            <div class="card-label">🤖 语言大模型（生文案）</div>
             <div class="setting-row">
               <div><span class="setting-label">API 地址</span></div>
-              <input class="input small" value="https://api.openai.com/v1" id="apiUrl" />
+              <input class="input small" placeholder="https://api.openai.com/v1" id="apiUrl" />
             </div>
             <div class="setting-row">
               <div><span class="setting-label">API Key</span></div>
@@ -301,14 +330,60 @@
             </div>
             <div class="setting-row">
               <div><span class="setting-label">模型</span></div>
-              <input class="input small" type="text" value="gpt-4o-mini" id="aiModel" placeholder="输入模型名称" />
+              <input class="input small" type="text" placeholder="输入模型名称，如 gpt-4o" id="aiModel" />
             </div>
             <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
               <span class="api-badge" id="apiTestBadge">未测试</span>
               <button class="btn btn-ghost btn-sm" onclick="testApiConnection()">测试连接</button>
-              <button class="btn btn-primary btn-sm" onclick="saveAllSettings()">保存设置</button>
+              <button class="btn btn-primary btn-sm" onclick="saveAISettings('ai')">保存设置</button>
             </div>
           </div>
+
+          <!-- 生图大模型 -->
+          <div class="card">
+            <div class="card-label">🎨 生图大模型</div>
+            <div class="setting-row">
+              <div><span class="setting-label">API 地址</span></div>
+              <input class="input small" placeholder="https://apihub.agnes-ai.com/v1" id="aiImageApiUrl" />
+            </div>
+            <div class="setting-row">
+              <div><span class="setting-label">API Key</span></div>
+              <input class="input small" type="password" placeholder="输入生图 API Key" id="aiImageApiKey" />
+            </div>
+            <div class="setting-row">
+              <div><span class="setting-label">模型</span></div>
+              <input class="input small" type="text" placeholder="输入模型名称，如 agnes-image-2.1-flash" id="aiImageModel" />
+            </div>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+              <span class="api-badge" id="aiImageTestBadge">未测试</span>
+              <button class="btn btn-ghost btn-sm" onclick="testAiImageConnection()">测试连接</button>
+              <button class="btn btn-primary btn-sm" onclick="saveAISettings('ai_image')">保存设置</button>
+            </div>
+          </div>
+
+          <!-- 生视频大模型 -->
+          <div class="card">
+            <div class="card-label">🎬 生视频大模型</div>
+            <div class="setting-row">
+              <div><span class="setting-label">API 地址</span></div>
+              <input class="input small" placeholder="https://apihub.agnes-ai.com/v1" id="aiVideoApiUrl" />
+            </div>
+            <div class="setting-row">
+              <div><span class="setting-label">API Key</span></div>
+              <input class="input small" type="password" placeholder="输入生视频 API Key" id="aiVideoApiKey" />
+            </div>
+            <div class="setting-row">
+              <div><span class="setting-label">模型</span></div>
+              <input class="input small" type="text" placeholder="输入模型名称，如 agnes-video-v2.0" id="aiVideoModel" />
+            </div>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:8px">
+              <span class="api-badge" id="aiVideoTestBadge">未测试</span>
+              <button class="btn btn-ghost btn-sm" onclick="testAiVideoConnection()">测试连接</button>
+              <button class="btn btn-primary btn-sm" onclick="saveAISettings('ai_video')">保存设置</button>
+            </div>
+          </div>
+
+          <!-- 其他设置 -->
           <div class="card">
             <div class="card-label">文案降级策略</div>
             <div class="setting-row">
@@ -332,14 +407,9 @@
           <div class="card about-card">
             <div class="about-info">
               <div class="about-name">壹准AI营销助手</div>
-              <div class="about-version" id="aboutVersion">v2.2.2 · 2026</div>
+              <div class="about-version" id="aboutVersion">v3.0.0 · 2026</div>
             </div>
             <button class="btn btn-ghost btn-sm" onclick="checkUpdate()">检查更新</button>
-          </div>
-            <div id="diagContent" style="font-size:12px;color:var(--text2)">正在检测...</div>
-            <div style="margin-top:8px">
-              <button class="btn btn-ghost btn-sm" onclick="refreshDiagnostics()">刷新</button>
-            </div>
           </div>
         </div>
       </div>
@@ -357,5 +427,11 @@
 function toggleTheme(){var c=document.documentElement.getAttribute('data-theme');var n=(c==='dark')?'light':'dark';document.documentElement.setAttribute('data-theme',n);localStorage.setItem('theme',n);updateToggleIcon(n);}
 function updateToggleIcon(t){var e=document.getElementById('themeToggle');if(e)e.textContent=(t==='dark')?'🌙':'☀️';}
 </script>
+  <!-- 图片/视频 全屏查看 -->
+  <div class="ai-lightbox hidden" id="aiLightbox" onclick="aiHideLightbox()">
+    <img id="aiLightboxImg" />
+    <video id="aiLightboxVideo" controls style="display:none"></video>
+  </div>
+
 </body>
 </html>
