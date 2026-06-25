@@ -7,7 +7,6 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
 <div class="app" id="app">
   <!-- 标题栏 -->
   <div class="titlebar" id="titlebar">
@@ -26,7 +25,7 @@
       <button class="tab active" data-tab="0">群发中心</button>
       <button class="tab" data-tab="1">朋友圈</button>
       <button class="tab" data-tab="2">AI 创意中心</button>
-      <button class="tab" data-tab="3">话术库</button>
+      <button class="tab" data-tab="3">资源库</button>
       <button class="tab" data-tab="4">设置</button>
     </div>
   </div>
@@ -55,7 +54,10 @@
           </div>
           <div class="card">
             <div class="card-label">发送内容</div>
-            <textarea class="textarea" id="copyText" placeholder="输入要发送的消息内容..."></textarea>
+            <div style="display:flex;gap:6px;align-items:flex-start">
+              <textarea class="textarea" id="copyText" placeholder="输入要发送的消息内容..." style="flex:1"></textarea>
+              <button class="btn btn-ghost btn-sm db-resource-btn" onclick="dbShowPicker('broadcast')" title="从资源库选取" style="flex-shrink:0">📦 资源库</button>
+            </div>
           </div>
           <div class="card hint-card">
             <div class="hint-text">
@@ -151,7 +153,10 @@
         <p style="font-size:12px;color:var(--text2);margin:0 0 8px">
           先确保微信已打开并登录，支持文字 / 图片 / 视频
         </p>
-        <textarea class="textarea" id="momentText" placeholder="输入朋友圈文字内容..."></textarea>
+        <div style="display:flex;gap:6px;align-items:flex-start">
+          <textarea class="textarea" id="momentText" placeholder="输入朋友圈文字内容..." style="flex:1"></textarea>
+          <button class="btn btn-ghost btn-sm" onclick="dbShowPicker('moment')" title="从资源库选取">📦 资源库</button>
+        </div>
         <div style="margin-top:4px;font-size:11px;color:var(--text2)">
           <span id="momentCharCount">0</span> / 2000 字
         </div>
@@ -278,43 +283,99 @@
       </div>
     </div>
 
-    <!-- Tab 2: 话术库 (data-panel="3") -->
+    <!-- Tab 2: 资源库 (data-panel="3") -->
     <div class="panel" data-panel="3">
-      <div class="card">
-        <div class="card-header">
-          <div class="card-label" style="margin-bottom:0">内置话术库</div>
-          <button class="btn btn-primary btn-sm" onclick="showAddScript()">+ 新增话术</button>
+      <!-- 工具栏 -->
+      <div class="db-toolbar">
+        <input class="input small" id="dbSearchInput" placeholder="搜索标题/内容/标签…" oninput="dbFilter()" style="flex:1;min-width:160px" />
+        <div class="pill-group" id="dbTypePills">
+          <span class="pill active" data-dbtype="">全部</span>
+          <span class="pill" data-dbtype="text">📝 文案</span>
+          <span class="pill" data-dbtype="image">🖼 图片</span>
+          <span class="pill" data-dbtype="video">🎬 视频</span>
         </div>
-        <div id="scriptsList"><div class="empty-state">加载中...</div></div>
-        <div id="addScriptForm" class="hidden" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
-          <div class="card-label">新增话术</div>
-          <div class="input-row" style="margin-bottom:8px">
-            <input class="input" style="flex:0 0 120px" placeholder="分类标签" id="newScriptTag" />
-            <input class="input" placeholder="话术内容，支持 {变量} 占位符" id="newScriptText" />
+        <button class="btn btn-primary btn-sm" onclick="dbShowAdd()">+ 新建</button>
+        <button class="btn btn-ghost btn-sm" onclick="dbPickStorageDir()" title="选择存储目录">📁 存储目录</button>
+      </div>
+      <div style="font-size:11px;color:var(--text2);margin-bottom:8px" id="dbStoragePath"></div>
+
+      <!-- 结果区 -->
+      <div id="dbList" class="db-list"></div>
+
+      <!-- 新增/编辑弹窗 -->
+      <div class="modal-overlay hidden" id="dbModal">
+        <div class="modal-card">
+          <div class="modal-header">
+            <span id="dbModalTitle">新建资源</span>
+            <button class="modal-close" onclick="dbHideModal()">✕</button>
           </div>
-          <div class="btn-row">
-            <button class="btn btn-ghost" onclick="hideAddScript()">取消</button>
-            <button class="btn btn-primary" onclick="saveScript()">保存话术</button>
+          <div class="modal-body">
+            <input type="hidden" id="dbEditId" />
+            <div class="setting-row"><div><span class="setting-label">类型</span></div>
+              <select class="input small" id="dbType" onchange="dbTypeChange()"><option value="text">📝 文案</option><option value="image">🖼 图片</option><option value="video">🎬 视频</option></select>
+            </div>
+            <div class="setting-row"><div><span class="setting-label">标题</span></div><input class="input small" id="dbTitle" placeholder="资源标题" /></div>
+            <div class="setting-row"><div><span class="setting-label">标签</span></div><input class="input small" id="dbTags" placeholder="逗号分隔，如 以旧换新,海报" /></div>
+            <div class="setting-row" id="dbContentRow"><div><span class="setting-label">内容</span></div><textarea class="textarea" id="dbContent" placeholder="文案内容" rows="4"></textarea></div>
+            <div class="setting-row hidden" id="dbFileRow"><div><span class="setting-label">文件</span></div>
+              <button class="btn btn-ghost btn-sm" onclick="dbPickFile()" id="dbFileBtn">选择文件</button>
+              <span style="font-size:11px;color:var(--text2);margin-left:8px" id="dbFileName"></span>
+            </div>
+            <div class="setting-row" id="dbPreview" style="display:none"><div><span class="setting-label">预览</span></div>
+              <img id="dbPreviewImg" style="max-width:200px;max-height:120px;border-radius:6px" />
+              <video id="dbPreviewVid" controls style="max-width:200px;max-height:120px;border-radius:6px;display:none"></video>
+            </div>
           </div>
-        </div>
-        <div id="editScriptForm" class="hidden" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)">
-          <div class="card-label">编辑话术</div>
-          <input type="hidden" id="editScriptId" />
-          <div class="input-row" style="margin-bottom:8px">
-            <input class="input" style="flex:0 0 120px" placeholder="分类标签" id="editScriptTag" />
-            <input class="input" placeholder="话术内容" id="editScriptText" />
-          </div>
-          <div class="btn-row">
-            <button class="btn btn-ghost" onclick="hideEditScript()">取消</button>
-            <button class="btn btn-primary" onclick="updateScript()">保存修改</button>
+          <div class="modal-footer">
+            <button class="btn btn-ghost" onclick="dbHideModal()">取消</button>
+            <button class="btn btn-primary" id="dbSaveBtn" onclick="dbSave()">保存</button>
           </div>
         </div>
       </div>
-      <div class="section-note">话术库用于无 API Key 时的文案兜底，支持 {变量} 占位符。</div>
+    </div>
+
+            <!-- 资源选取弹窗 -->
+    <div class="modal-overlay hidden" id="dbPickerModal">
+      <div class="modal-card" style="max-width:560px">
+        <div class="modal-header">
+          <span id="dbPickerTitle">📦 资源库</span>
+          <button class="modal-close" onclick="dbHidePicker()">✕</button>
+        </div>
+        <div class="modal-body db-picker-body">
+          <div id="dbPickerSearchMode">
+            <div style="display:flex;gap:6px;margin-bottom:8px">
+              <input class="input small" id="dbPickerSearch" placeholder="搜索（标题/内容/标签）…" oninput="dbPickerFilter()" style="flex:1" />
+              <select class="input small" id="dbPickerType" onchange="dbPickerFilter()" style="width:80px"><option value="">全部</option><option value="text">文案</option><option value="image">图片</option><option value="video">视频</option></select>
+            </div>
+            <div id="dbPickerResults" class="db-picker-grid"></div>
+            
+          </div>
+          <div class="hidden" id="dbPickerAIMode">
+            <div style="display:flex;gap:4px;align-items:center;margin-bottom:8px">
+              <button class="btn btn-ghost btn-sm" onclick="dbPickerAIBack()">← 返回</button>
+              <span style="flex:1"></span>
+              <select class="input small" id="dbPickerAIModel" style="width:110px;font-size:10px">
+                <option value="chat">💬 语言模型</option><option value="image">🎨 生图模型</option><option value="video">🎬 生视频模型</option>
+              </select>
+            </div>
+            <div id="dbAIResourceSelect" style="margin-bottom:8px"></div>
+            <div id="dbPickerAIChat" style="min-height:150px;max-height:250px;overflow-y:auto;padding:8px;background:var(--surface);border-radius:8px;border:1px solid var(--border);margin-bottom:8px"></div>
+            <div style="display:flex;gap:6px">
+              <textarea class="textarea" id="dbPickerAIChatInput" placeholder="描述你的需求…" rows="2" style="flex:1;font-size:12px"></textarea>
+              <button class="btn btn-primary btn-sm" onclick="dbPickerAIChatSend()" style="flex-shrink:0">发送</button>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" onclick="dbHidePicker()">取消</button>
+          <button class="btn btn-primary" id="dbPickerFillBtn" onclick="dbPickerMainFill()" disabled>填入</button>
+        </div>
+      </div>
     </div>
 
     <!-- Tab 4: 设置 (data-panel="4") -->
     <div class="panel" data-panel="4">
+      <div id="aiConfigDebug" style="background:#fff3cd;padding:6px 12px;font-size:12px;color:#856404;border-radius:6px;margin-bottom:12px;display:none"></div>
       <div class="two-col">
         <div class="col">
           <!-- 语言大模型 -->
@@ -407,7 +468,7 @@
           <div class="card about-card">
             <div class="about-info">
               <div class="about-name">壹准AI营销助手</div>
-              <div class="about-version" id="aboutVersion">v3.0.0 · 2026</div>
+              <div class="about-version" id="aboutVersion">v3.5.0 · 2026</div>
             </div>
             <button class="btn btn-ghost btn-sm" onclick="checkUpdate()">检查更新</button>
           </div>

@@ -76,6 +76,8 @@ function setupTabs() {
       document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
       document.querySelector(`[data-panel="${idx}"]`).classList.add('active');
       state.currentTab = idx;
+      // 切换到设置 Tab 时强制刷新 AI 配置
+      if (idx === 4) { if (typeof loadAIConfigs === 'function') loadAIConfigs(); }
     });
   });
 }
@@ -1869,6 +1871,14 @@ async function aiChatSend() {
   _updateSendBtn();
   if (result.success) {
     sec.messages.push({ role: 'assistant', content: result.content, time: Date.now() });
+    // 联网搜索状态提示
+    if (result.searchInfo) {
+      if (result.searchInfo.success) {
+        sec.messages.push({ role: 'system', content: '🌐 已联网搜索「' + result.searchInfo.query + '」，找到 ' + result.searchInfo.count + ' 条结果', time: Date.now() });
+      } else {
+        sec.messages.push({ role: 'system', content: '🌐 联网搜索失败：' + result.searchInfo.reason + '（DuckDuckGo API 可能被墙，不影响对话）', time: Date.now() });
+      }
+    }
   } else {
     sec.messages.push({ role: 'assistant', content: '❌ ' + safeErr(result.error), time: Date.now(), error: true });
   }
@@ -2304,47 +2314,585 @@ document.addEventListener('click', e => {
 });
 
 // ═══════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+//  资源数据库
+// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+//  资源数据库
+// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+//  资源数据库 - 完整重写版
+// ═══════════════════════════════════════════════════════════
+
+const dbState = { 
+  items: [], 
+  filterType: '', 
+  filterQuery: '', 
+  selectedId: null, 
+  pickerTarget: null, 
+  pickerSelected: null
+};
+
+// ════════════════════════════
+//  资源库 Tab
+// ════════════════════════════
+
+async function dbLoad() {
+  try { dbState.items = await window.electronAPI.dbList() || []; } catch { dbState.items = []; }
+  dbRender(); dbShowStoragePath();
+}
+
+function dbShowStoragePath() {
+  if (!window.electronAPI || !window.electronAPI.dbGetPath) return;
+  window.electronAPI.dbGetPath().then(function(p) {
+    var el = document.getElementById('dbStoragePath'); if (el) el.textContent = '📁 ' + (p || '默认目录');
+  }).catch(function(){});
+}
+
+function dbFilter() {
+  dbState.filterQuery = (document.getElementById('dbSearchInput') || {}).value || '';
+  dbRender();
+}
+
+function dbRender() {
+  var list = document.getElementById('dbList'); if (!list) return;
+  var q = dbState.filterQuery.toLowerCase();
+  var items = dbState.items;
+  if (dbState.filterType) items = items.filter(function(x) { return x.type === dbState.filterType; });
+  if (q) items = items.filter(function(x) {
+    return (x.title||'').toLowerCase().indexOf(q) >= 0 ||
+           (x.content||'').toLowerCase().indexOf(q) >= 0 ||
+           (x.tags||[]).some(function(t) { return t.toLowerCase().indexOf(q) >= 0; });
+  });
+  if (items.length === 0) {
+    list.innerHTML = '<div style="padding:40px;text-align:center;color:#888;font-size:14px">暂无资源，点击「+ 新建」添加</div>';
+    return;
+  }
+  var html = '<div class="db-grid">';
+  items.forEach(function(x) {
+    var sel = dbState.selectedId === x.id ? ' selected' : '';
+    var body = '';
+    if (x.type === 'image' && x.filePath) {
+      body = '<div class="db-grid-img"><img src="file://' + x.filePath + '" onerror="this.style.display=\'none\'" /></div>';
+    } else if (x.type === 'video') {
+      body = '<div class="db-grid-vid">🎬 ' + escapeHTML((x.filePath||'').split(/[\\\\/]/).pop()||'视频') + '</div>';
+    } else {
+      body = '<div class="db-grid-txt">' + escapeHTML((x.content||'').slice(0,100)) + '</div>';
+    }
+    var tags = '';
+    if (x.tags && x.tags.length) {
+      tags = '<div class="db-tags">' + x.tags.map(function(t) { return '<span class="db-tag">' + escapeHTML(t) + '</span>'; }).join('') + '</div>';
+    }
+    html += '<div class="db-card' + sel + '" onclick="dbSelect(\'' + x.id + '\')">' +
+      '<div class="db-card-hdr"><span>' + (x.type==='image'?'🖼':x.type==='video'?'🎬':'📝') + '</span><span style="flex:1"></span>' +
+      '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();dbEdit(\'' + x.id + '\')">✏️</button>' +
+      '<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();dbDelete(\'' + x.id + '\')">🗑</button></div>' +
+      body +
+      '<div class="db-card-ftr"><div class="db-title">' + escapeHTML(x.title||'无标题') + '</div>' + tags + '</div></div>';
+  });
+  html += '</div>';
+  list.innerHTML = html;
+}
+
+function dbSelect(id) { dbState.selectedId = (dbState.selectedId === id ? null : id); dbRender(); }
+
+// ════════════════════════════
+//  新建/编辑
+// ════════════════════════════
+
+var _dbFilePath = null;
+
+function dbShowAdd() { _dbResetForm(); document.getElementById('dbModalTitle').textContent = '新建资源'; document.getElementById('dbSaveBtn').textContent = '保存'; document.getElementById('dbModal').classList.remove('hidden'); dbTypeChange(); }
+
+function _dbResetForm() {
+  document.getElementById('dbEditId').value = '';
+  document.getElementById('dbType').value = 'text';
+  document.getElementById('dbTitle').value = '';
+  document.getElementById('dbTags').value = '';
+  document.getElementById('dbContent').value = '';
+  document.getElementById('dbFileName').textContent = '';
+  _dbFilePath = null;
+  document.getElementById('dbPreview').style.display = 'none';
+}
+
+function dbTypeChange() {
+  var t = document.getElementById('dbType').value;
+  document.getElementById('dbContentRow').classList.toggle('hidden', t !== 'text');
+  document.getElementById('dbFileRow').classList.toggle('hidden', t === 'text');
+}
+
+function dbHideModal() { document.getElementById('dbModal').classList.add('hidden'); }
+
+async function dbPickFile() {
+  if (!window.electronAPI || !window.electronAPI.selectFile) {
+    toast('文件选择功能暂不可用，请联系技术支持');
+    return;
+  }
+  var t = document.getElementById('dbType').value;
+  var types = t === 'video' ? ['video'] : t === 'image' ? ['image'] : ['doc'];
+  var p = await window.electronAPI.selectFile(types);
+  if (!p) return;
+  _dbFilePath = p;
+  document.getElementById('dbFileName').textContent = p.split(/[\\\\/]/).pop();
+  document.getElementById('dbPreview').style.display = '';
+  if (t === 'image') {
+    document.getElementById('dbPreviewImg').src = 'file://' + p;
+    document.getElementById('dbPreviewImg').style.display = '';
+    document.getElementById('dbPreviewVid').style.display = 'none';
+  } else if (t === 'video') {
+    document.getElementById('dbPreviewVid').src = 'file://' + p;
+    document.getElementById('dbPreviewVid').style.display = '';
+    document.getElementById('dbPreviewImg').style.display = 'none';
+  }
+}
+
+async function dbEdit(id) {
+  var item = dbState.items.find(function(x) { return x.id === id; });
+  if (!item) return;
+  document.getElementById('dbEditId').value = item.id;
+  document.getElementById('dbType').value = item.type;
+  document.getElementById('dbTitle').value = item.title || '';
+  document.getElementById('dbTags').value = (item.tags||[]).join(',');
+  document.getElementById('dbContent').value = item.content || '';
+  _dbFilePath = item.filePath;
+  document.getElementById('dbFileName').textContent = item.filePath ? item.filePath.split(/[\\\\/]/).pop() : '';
+  document.getElementById('dbModalTitle').textContent = '编辑资源';
+  document.getElementById('dbSaveBtn').textContent = '更新';
+  document.getElementById('dbModal').classList.remove('hidden');
+  dbTypeChange();
+  if ((item.type === 'image' || item.type === 'video') && item.filePath) {
+    document.getElementById('dbPreview').style.display = '';
+    if (item.type === 'image') {
+      document.getElementById('dbPreviewImg').src = 'file://' + item.filePath;
+      document.getElementById('dbPreviewImg').style.display = '';
+      document.getElementById('dbPreviewVid').style.display = 'none';
+    } else {
+      document.getElementById('dbPreviewVid').src = 'file://' + item.filePath;
+      document.getElementById('dbPreviewVid').style.display = '';
+      document.getElementById('dbPreviewImg').style.display = 'none';
+    }
+  }
+}
+
+async function dbSave() {
+  var id = document.getElementById('dbEditId').value;
+  var type = document.getElementById('dbType').value;
+  var title = document.getElementById('dbTitle').value.trim();
+  var tags = document.getElementById('dbTags').value.split(/[,，]/).map(function(s) { return s.trim(); }).filter(Boolean);
+  var content = document.getElementById('dbContent').value.trim();
+  var filePath = _dbFilePath || '';
+  if (!title) return toast('请输入标题');
+  if (type === 'text' && !content) return toast('请输入内容');
+  if ((type === 'image' || type === 'video') && !filePath) return toast('请选择文件');
+  var data = { type: type, title: title, tags: tags, content: content, filePath: filePath };
+  try {
+    if (id) { await window.electronAPI.dbUpdate({ id: id, updates: data }); }
+    else { await window.electronAPI.dbAdd(data); }
+    dbHideModal(); dbLoad(); toast(id ? '已更新' : '已保存');
+  } catch(e) { toast('保存失败'); }
+}
+
+async function dbDelete(id) {
+  if (!confirm('确定删除？')) return;
+  try { await window.electronAPI.dbDelete(id); dbLoad(); toast('已删除'); } catch(e) {}
+}
+
+async function dbPickStorageDir() {
+  if (!window.electronAPI || !window.electronAPI.selectFolder) {
+    toast('存储目录功能暂不可用');
+    return;
+  }
+  var p = await window.electronAPI.selectFolder();
+  if (!p) return;
+  try { await window.electronAPI.dbSetPath(p); dbShowStoragePath(); toast('存储目录已设置'); } catch(e) { toast('设置失败'); }
+}
+
+// ════════════════════════════
+//  资源选取弹窗
+// ════════════════════════════
+
+// ════════════════════════════
+//  资源选取弹窗 (修复版)
+// ════════════════════════════
+
+async function dbShowPicker(target) {
+  dbState.pickerTarget = target;
+  dbState.pickerSelected = null;
+  var ps = document.getElementById('dbPickerSearch'); if (ps) ps.value = '';
+  var pt = document.getElementById('dbPickerType'); if (pt) pt.value = '';
+  var fb = document.getElementById('dbPickerFillBtn'); if (fb) fb.disabled = true;
+  var pm = document.getElementById('dbPickerModal'); if (pm) pm.classList.remove('hidden');
+  var sm = document.getElementById('dbPickerSearchMode'); if (sm) sm.classList.remove('hidden');
+  var am = document.getElementById('dbPickerAIMode'); if (am) am.classList.add('hidden');
+  var ti = document.getElementById('dbPickerTitle'); if (ti) ti.textContent = '📦 资源库';
+  var pr = document.getElementById('dbPickerResults'); if (pr) pr.innerHTML = '';
+}
+
+function dbHidePicker() {
+  var pm = document.getElementById('dbPickerModal'); if (pm) pm.classList.add('hidden');
+}
+
+function dbPickerFilter() {
+  var q = ((document.getElementById('dbPickerSearch') || {}).value || '').toLowerCase().trim();
+  var tp = (document.getElementById('dbPickerType') || {}).value || '';
+  var grid = document.getElementById('dbPickerResults'); if (!grid) return;
+  if (!q) { grid.innerHTML = ''; return; }
+  var items = dbState.items || [];
+  if (tp) items = items.filter(function(x) { return x.type === tp; });
+  if (q) items = items.filter(function(x) {
+    return (x.title||'').toLowerCase().indexOf(q) >= 0 ||
+           (x.content||'').toLowerCase().indexOf(q) >= 0 ||
+           (x.tags||[]).some(function(t) { return t.toLowerCase().indexOf(q) >= 0; });
+  });
+  if (items.length === 0) { grid.innerHTML = '<div style="text-align:center;color:#888;padding:20px;font-size:13px">未找到匹配资源</div>'; return; }
+  grid.innerHTML = items.map(function(x) {
+    var sel = '';
+    if (dbState.pickerTarget === 'moment' && window._dbMomentSelected && window._dbMomentSelected.indexOf(x.id) >= 0) sel = ' selected';
+    else if (dbState.pickerSelected && dbState.pickerSelected.id === x.id) sel = ' selected';
+    if (x.type === 'image') {
+      return '<div class="db-picker-item' + sel + '" onclick="dbPickerSelect(\'' + x.id + '\')"><img src="file://' + x.filePath + '" onerror="this.src=\'\'" /><div class="db-picker-label">' + escapeHTML(x.title) + '</div></div>';
+    } else if (x.type === 'video') {
+      return '<div class="db-picker-item' + sel + '" onclick="dbPickerSelect(\'' + x.id + '\')"><div style="font-size:24px">🎬</div><div class="db-picker-label">' + escapeHTML(x.title) + '</div></div>';
+    } else {
+      return '<div class="db-picker-item text-item' + sel + '" onclick="dbPickerSelect(\'' + x.id + '\')">' + escapeHTML((x.content || x.title).slice(0, 80)) + '</div>';
+    }
+  }).join('');
+}
+
+function dbPickerSelect(id) {
+  var item = dbState.items.find(function(x) { return x.id === id; });
+  // 朋友圈支持多选 (toggle)
+  if (dbState.pickerTarget === 'moment') {
+    if (!window._dbMomentSelected) window._dbMomentSelected = [];
+    var idx = window._dbMomentSelected.indexOf(id);
+    if (idx >= 0) { window._dbMomentSelected.splice(idx, 1); }
+    else { window._dbMomentSelected.push(id); }
+    dbState.pickerSelected = window._dbMomentSelected.length > 0 ? { _multi: true } : null;
+  } else {
+    dbState.pickerSelected = (dbState.pickerSelected && dbState.pickerSelected.id === id) ? null : item;
+  }
+  var fb = document.getElementById('dbPickerFillBtn');
+  if (fb) fb.disabled = (dbState.pickerTarget === 'moment') ? (window._dbMomentSelected.length === 0) : !dbState.pickerSelected;
+  if (dbState.pickerTarget !== 'moment') dbPickerFilter();
+  else dbPickerFilter();
+}
+
+function dbPickerFill() {
+  // 朋友圈多选
+  if (dbState.pickerTarget === 'moment' && window._dbMomentSelected && window._dbMomentSelected.length > 0) {
+    if (typeof momentState === 'undefined') { toast('朋友圈模块未初始化'); return; }
+    if (!momentState.mediaPaths) momentState.mediaPaths = [];
+    window._dbMomentSelected.forEach(function(id) {
+      var it = dbState.items.find(function(x) { return x.id === id; });
+      if (!it) return;
+      if (it.type === 'text') {
+        var ta = document.getElementById('momentText'); if (ta) { ta.value = (ta.value||'') + (ta.value?'\n':'') + it.content; }
+      } else {
+        if (momentState.mediaPaths.length >= 9) return;
+        momentState.mediaPaths.push(it.filePath);
+      }
+    });
+    var ta = document.getElementById('momentText'); if (ta) { var cc = document.getElementById('momentCharCount'); if (cc) cc.textContent = (ta.value||'').length; }
+    if (typeof renderMomentMediaGrid === 'function') renderMomentMediaGrid();
+    _switchToTab(1); dbHidePicker(); toast('已填入朋友圈');
+    return;
+  }
+
+  var item = dbState.pickerSelected;
+  if (!item) { toast('请先选择一个资源'); return; }
+  if (dbState.pickerTarget === 'broadcast') {
+    if (item.type === 'text') {
+      var ta = document.getElementById('copyText'); if (ta) ta.value = item.content;
+      _switchToTab(0); toast('文案已填入群发中心');
+    } else if (item.type === 'image') {
+      state.imagePath = item.filePath;
+      _switchToTab(0);
+      setTimeout(function() {
+        showImagePreview(item.filePath, 'imagePreview', 'uploadIcon', 'uploadText');
+        updateSendInfo();
+      }, 300);
+      toast('图片已填入群发中心');
+    } else if (item.type === 'video') {
+      state.imagePath = item.filePath;
+      updateSendInfo();
+      _switchToTab(0); toast('视频已填入群发中心');
+    }
+  } else if (dbState.pickerTarget === 'moment') {
+    if (item.type === 'text') {
+      var ta2 = document.getElementById('momentText');
+      if (ta2) { ta2.value = item.content; var cc = document.getElementById('momentCharCount'); if (cc) cc.textContent = item.content.length; }
+      _switchToTab(1); toast('文案已填入朋友圈');
+    } else {
+      if (typeof momentState !== 'undefined' && momentState) {
+        if (!momentState.mediaPaths) momentState.mediaPaths = [];
+        if (momentState.mediaPaths.length >= 9) { toast('最多9张/段媒体'); return; }
+        momentState.mediaPaths.push(item.filePath);
+        if (typeof renderMomentMediaGrid === 'function') renderMomentMediaGrid();
+        _switchToTab(1); toast('媒体已填入朋友圈');
+      }
+    }
+  }
+  dbHidePicker();
+}
+
+// ════════════════════════════
+//  AI帮 (修复版)
+// ════════════════════════════
+
+var dbAIChat = [];
+var dbAISelected = null;
+
+function dbPickerAIStart() {
+  var sm = document.getElementById('dbPickerSearchMode'); if (sm) sm.classList.add('hidden');
+  var am = document.getElementById('dbPickerAIMode'); if (am) am.classList.remove('hidden');
+  var ti = document.getElementById('dbPickerTitle'); if (ti) ti.textContent = '🤖 AI帮';
+  dbAIChat = [];
+  dbAISelected = null;
+  dbAIRenderChat();
+  dbAIResRender();
+}
+
+function dbPickerAIBack() {
+  var sm = document.getElementById('dbPickerSearchMode'); if (sm) sm.classList.remove('hidden');
+  var am = document.getElementById('dbPickerAIMode'); if (am) am.classList.add('hidden');
+  var ti = document.getElementById('dbPickerTitle'); if (ti) ti.textContent = '📦 资源库';
+}
+
+// AI帮资源搜索 (不直接展示所有)
+function dbAIResSearch() {
+  dbAIResRender();
+}
+
+function dbAIResRender() {
+  var el = document.getElementById('dbAIResourceSelect'); if (!el) return;
+  var q = ((document.getElementById('dbAIResSearchInput')||{}).value||'').toLowerCase().trim();
+  var items = dbState.items || [];
+  if (q) items = items.filter(function(x) {
+    return (x.title||'').toLowerCase().indexOf(q) >= 0 ||
+           (x.tags||[]).some(function(t) { return t.toLowerCase().indexOf(q) >= 0; });
+  });
+  items = items.slice(0, 15);
+
+  var h = '<div style="display:flex;gap:4px;margin-bottom:4px">';
+  h += '<input class="input small" id="dbAIResSearchInput" placeholder="搜索资源..." oninput="dbAIResRender()" style="flex:1;font-size:11px;height:26px" />';
+  h += '</div><div style="display:flex;gap:4px;flex-wrap:wrap;max-height:80px;overflow-y:auto;">';
+  if (items.length === 0 && q) { h += '<span style="font-size:11px;color:#888">无匹配</span>'; }
+  items.forEach(function(x) {
+    var icon = x.type === 'image' ? '🖼' : x.type === 'video' ? '🎬' : '📝';
+    var selStyle = (dbAISelected && dbAISelected.id === x.id) ? 'background:#7c6ff7;color:#fff;' : 'background:#fff;';
+    h += '<button onclick="dbAISelectRes(\'' + x.id + '\')" style="' + selStyle + 'border:1px solid #ddd;border-radius:4px;padding:4px 8px;font-size:11px;cursor:pointer;white-space:nowrap;overflow:hidden;max-width:120px;text-overflow:ellipsis;">' + icon + ' ' + escapeHTML(x.title||'') + '</button>';
+  });
+  h += '</div>';
+  el.innerHTML = h;
+}
+
+function dbAISelectRes(id) {
+  dbAISelected = (dbAISelected && dbAISelected.id === id) ? null : dbState.items.find(function(x) { return x.id === id; });
+  dbAIResRender();
+  if (dbAISelected) {
+    dbAIChat.push({ role: 'system', content: '✅ 已选择: [' + (dbAISelected.type==='text'?'文案':dbAISelected.type==='image'?'图片':'视频') + '] ' + dbAISelected.title });
+    dbAIRenderChat();
+  }
+}
+
+function dbAIRenderChat() {
+  var el = document.getElementById('dbPickerAIChat'); if (!el) return;
+  var h = '';
+  dbAIChat.forEach(function(m) {
+    if (m.role === 'system') {
+      h += '<div style="text-align:center;color:#888;font-size:11px;margin:4px 0">' + escapeHTML(m.content) + '</div>';
+    } else if (m._img) {
+      var imgSrc = m._img.startsWith('data:') || m._img.startsWith('http') ? m._img : 'file://' + m._img;
+      h += '<div style="display:flex;justify-content:flex-start;margin:4px 0"><div style="max-width:80%;background:#f0f0f0;color:#333;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5">';
+      h += '<img src="' + imgSrc + '" style="max-width:200px;max-height:200px;border-radius:8px;display:block;margin-bottom:4px" onerror="this.style.display=\'none\'" />';
+      h += escapeHTML(m.content || '') + '</div></div>';
+    } else {
+      var side = m.role === 'user' ? 'flex-end' : 'flex-start';
+      var bg = m.role === 'user' ? '#7c6ff7' : '#f0f0f0';
+      var clr = m.role === 'user' ? '#fff' : '#333';
+      h += '<div style="display:flex;justify-content:' + side + ';margin:4px 0"><div style="max-width:80%;background:' + bg + ';color:' + clr + ';padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;word-break:break-word">' + escapeHTML(m.content) + '</div></div>';
+    }
+  });
+  el.innerHTML = h;
+  el.scrollTop = 99999;
+}
+
+async function dbPickerAIChatSend() {
+  var inp = document.getElementById('dbPickerAIChatInput'); if (!inp) return;
+  var text = (inp.value || '').trim(); if (!text) return;
+  inp.value = '';
+  dbAIChat.push({ role: 'user', content: text });
+  dbAIChat.push({ role: 'assistant', content: '思考中...' });
+  dbAIRenderChat();
+  
+  var model = (document.getElementById('dbPickerAIModel') || {}).value || 'chat';
+  try {
+    var prompt = '';
+    if (dbAISelected) {
+      var r = dbAISelected;
+      if (r.type === 'text') {
+        prompt = '【资源库文案】标题: ' + r.title + '\n内容: ' + r.content + '\n标签: ' + (r.tags||[]).join(',') + '\n\n用户指令: ' + text + '\n\n请根据指令处理这个文案。直接输出优化后的结果。';
+      } else {
+        prompt = '【资源库文件】类型: ' + (r.type==='image'?'图片':'视频') + '\n标题: ' + r.title + '\n文件路径: ' + r.filePath + '\n标签: ' + (r.tags||[]).join(',') + '\n\n用户指令: ' + text + '\n\n请根据指令处理这个资源。';
+      }
+    } else {
+      // 无选定资源 → 搜索所有资源
+      var allInfo = dbState.items.map(function(x) {
+        return '[' + x.type + '] ' + x.title + ' | 标签: ' + (x.tags||[]).join(',') + ' | ' + (x.type==='text' ? '内容:' + (x.content||'').slice(0,100) : '');
+      }).join('\n');
+      prompt = '【资源库全部内容】\n' + allInfo + '\n\n用户需求: ' + text + '\n\n请搜索资源库找到匹配内容，并根据用户需求优化后输出。';
+    }
+    
+    if (model === 'chat') {
+      var r = await window.electronAPI.aiChat({ sessionId: 'dbai-' + Date.now(), messages: [{ role: 'user', content: prompt }], searchEnabled: false });
+      dbAIChat.pop();
+      if (r.success) { dbAIChat.push({ role: 'assistant', content: r.content }); }
+      else { dbAIChat.push({ role: 'assistant', content: '❌ ' + (r.error || '') }); }
+    } else if (model === 'image') {
+      var cfgRes = await window.electronAPI.aiGetConfig();
+      var imgCfg = (cfgRes && cfgRes.config && cfgRes.config.ai_image) ? cfgRes.config.ai_image : {};
+      if (!imgCfg.api_key) {
+        dbAIChat.pop(); dbAIChat.push({ role: 'assistant', content: '❌ 请先在设置中配置生图模型 API Key' });
+      } else {
+        // 如果有参考图路径，传给生图
+        var opts = {};
+        if (dbAISelected && dbAISelected.filePath) opts.reference_image_path = dbAISelected.filePath;
+        var genRes = await window.electronAPI.aiGenerateImage({ prompt: text, options: opts, config: imgCfg });
+        dbAIChat.pop();
+        if (genRes.success && genRes.images && genRes.images.length > 0) {
+          var img = genRes.images[0];
+          dbAIChat.push({ role: 'assistant', content: '🎨 已生成图片', _img: img.local_path || img.url });
+        } else {
+          dbAIChat.push({ role: 'assistant', content: '❌ ' + (genRes.error || '生成失败') });
+        }
+      }
+    } else {
+      dbAIChat.pop(); dbAIChat.push({ role: 'assistant', content: '🎬 视频生成功能暂未开放' });
+    }
+    document.getElementById('dbPickerFillBtn').disabled = false;
+    dbAIRenderChat();
+  } catch(e) {
+    dbAIChat.pop();
+    dbAIChat.push({ role: 'assistant', content: '❌ ' + (e.message || '') });
+    dbAIRenderChat();
+  }
+}
+
+function dbPickerAIModeFill() {
+  var last = null;
+  for (var i = dbAIChat.length - 1; i >= 0; i--) { if (dbAIChat[i].role === 'assistant') { last = dbAIChat[i]; break; } }
+  if (!last) { toast('没有可填入的内容'); return; }
+  
+  if (last._img) {
+    state.imagePath = last._img;
+    if (dbState.pickerTarget === 'moment') {
+      if (typeof momentState !== 'undefined') {
+        if (!momentState.mediaPaths) momentState.mediaPaths = [];
+        momentState.mediaPaths.push(last._img);
+        if (typeof renderMomentMediaGrid === 'function') renderMomentMediaGrid();
+        _switchToTab(1); toast('图片已填入朋友圈');
+      }
+    } else {
+      _switchToTab(0);
+      setTimeout(function() { showImagePreview('file://' + last._img, 'imagePreview', 'uploadIcon', 'uploadText'); }, 200);
+      toast('图片已填入群发中心');
+    }
+    dbHidePicker();
+    return;
+  }
+  
+  var content = (last.content || '').replace(/^❌ /, '');
+  if (!content) { toast('没有可用内容'); return; }
+  
+  if (dbState.pickerTarget === 'moment') {
+    var ta = document.getElementById('momentText');
+    if (ta) { ta.value = content; var cc = document.getElementById('momentCharCount'); if (cc) cc.textContent = content.length; }
+    _switchToTab(1);
+  } else {
+    var ta2 = document.getElementById('copyText'); if (ta2) ta2.value = content;
+    _switchToTab(0);
+  }
+  toast('内容已填入');
+  dbHidePicker();
+}
+
+// 填入分发器：搜索模式走 dbPickerFill，AI模式走 dbPickerAIModeFill
+function dbPickerMainFill() {
+  var am = document.getElementById('dbPickerAIMode');
+  if (am && !am.classList.contains('hidden')) { dbPickerAIModeFill(); }
+  else { dbPickerFill(); }
+}
+
+// Init
+(function() {
+  
+// Tab筛选器
+(function(){
+  var pills = document.getElementById('dbTypePills');
+  if (pills) {
+    pills.addEventListener('click', function(e) {
+      if (e.target.classList.contains('pill')) {
+        [].forEach.call(pills.querySelectorAll('.pill'), function(p) { p.classList.remove('active'); });
+        e.target.classList.add('active');
+        dbState.filterType = e.target.dataset.dbtype || '';
+        dbRender();
+      }
+    });
+  }
+})();
+
+var orig = window.openTab;
+  window.openTab = function(idx) {
+    if (orig) orig.call(window, idx);
+    if (idx === 3) setTimeout(dbLoad, 200);
+    if (idx === 4) setTimeout(function() { if (typeof loadAIConfigs === "function") loadAIConfigs(); }, 300);
+  };
+})();
+setTimeout(dbLoad, 500);
+
+
+
 //  AI 配置管理（独立于 backend，走 main.js IPC）
 // ═══════════════════════════════════════════════════════════
 
 // 加载所有 AI 配置（图片、视频），填入设置页表单
-async function loadAIConfigs() {
-  if (!window.electronAPI || !window.electronAPI.aiGetConfig) return;
+function loadAIConfigs() {
+  var setVal = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; };
+
+  // 主方案: preload 直接读 config.json（零 IPC，DOMContentLoaded 前已就绪）
+  if (window.__aiImageConfig) {
+    var img = window.__aiImageConfig.ai_image || {};
+    var vid = window.__aiImageConfig.ai_video || {};
+    if (img.api_key) { setVal('aiImageApiUrl', img.api_url); setVal('aiImageApiKey', img.api_key); setVal('aiImageModel', img.model); }
+    if (vid.api_key) { setVal('aiVideoApiUrl', vid.api_url); setVal('aiVideoApiKey', vid.api_key); setVal('aiVideoModel', vid.model); }
+  }
+
+  // 补充: localStorage（保存后立即刷新）
   try {
-    const res = await window.electronAPI.aiGetConfig();
-    if (!res || !res.success || !res.config) return;
-    const c = res.config;
-
-    const setVal = (id, val) => { if (val != null) { const el = document.getElementById(id); if (el) el.value = val; } };
-
-    // 图片配置
-    const img = c.ai_image || {};
-    setVal('aiImageApiUrl', img.api_url || '');
-    setVal('aiImageApiKey', img.api_key || '');
-    setVal('aiImageModel', img.model || '');
-
-    // 视频配置
-    const vid = c.ai_video || {};
-    setVal('aiVideoApiUrl', vid.api_url || '');
-    setVal('aiVideoApiKey', vid.api_key || '');
-    setVal('aiVideoModel', vid.model || '');
+    var lsImg = localStorage.getItem('yizhun_ai_image');
+    var lsVid = localStorage.getItem('yizhun_ai_video');
+    if (lsImg) { var d = JSON.parse(lsImg); setVal('aiImageApiUrl', d.api_url); setVal('aiImageApiKey', d.api_key); setVal('aiImageModel', d.model); }
+    if (lsVid) { var d2 = JSON.parse(lsVid); setVal('aiVideoApiUrl', d2.api_url); setVal('aiVideoApiKey', d2.api_key); setVal('aiVideoModel', d2.model); }
   } catch (_) {}
 }
 
 // 保存单个 AI 模块配置（通过 saveAISettings 调用，或 saveAllSettings 联动）
 async function saveAIConfigs() {
+  var get = function(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  var imgData = { api_url: get('aiImageApiUrl'), api_key: get('aiImageApiKey'), model: get('aiImageModel') };
+  var vidData = { api_url: get('aiVideoApiUrl'), api_key: get('aiVideoApiKey'), model: get('aiVideoModel') };
+
+  // ── 主方案: localStorage（100% 可靠，不受 IPC/文件/Flask 任何影响）──
+  try {
+    if (imgData.api_key) localStorage.setItem('yizhun_ai_image', JSON.stringify(imgData));
+    if (vidData.api_key) localStorage.setItem('yizhun_ai_video', JSON.stringify(vidData));
+    console.log('[saveAIConfigs] ✅ 已保存到 localStorage');
+  } catch (e) { console.error('[saveAIConfigs] localStorage 保存失败:', e); }
+
+  // ── 副方案: IPC 文件持久化 ──
   if (!window.electronAPI || !window.electronAPI.aiSaveConfig) return;
-  const get = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
-  try {
-    await window.electronAPI.aiSaveConfig({ section: 'ai_image', data: {
-      api_url: get('aiImageApiUrl'), api_key: get('aiImageApiKey'), model: get('aiImageModel'),
-    }});
-  } catch (_) {}
-  try {
-    await window.electronAPI.aiSaveConfig({ section: 'ai_video', data: {
-      api_url: get('aiVideoApiUrl'), api_key: get('aiVideoApiKey'), model: get('aiVideoModel'),
-    }});
-  } catch (_) {}
+  try { await window.electronAPI.aiSaveConfig({ section: 'ai_image', data: imgData }); } catch (_) {}
+  try { await window.electronAPI.aiSaveConfig({ section: 'ai_video', data: vidData }); } catch (_) {}
 }
 
 // ── 设置页 "保存设置" 按钮（每个模块独立保存 + 测试连接标记）──
@@ -2381,11 +2929,20 @@ async function saveAISettings(section) {
     return;
   }
 
-  // 图片/视频配置走 IPC
-  if (!window.electronAPI || !window.electronAPI.aiSaveConfig) return;
+  // 图片/视频配置：先写 localStorage（主存储，启动时同步读取），再走 IPC（备份）
+  // ── localStorage（100% 可靠，不依赖 IPC 竞态）──
   try {
-    await window.electronAPI.aiSaveConfig({ section, data });
-    toast((section === 'ai_image' ? '生图' : '生视频') + '大模型设置已保存');
+    if (data.api_key) {
+      localStorage.setItem('yizhun_ai_' + (section === 'ai_image' ? 'image' : 'video'), JSON.stringify(data));
+    }
+  } catch (_) {}
+
+  // ── IPC（文件备份）──
+  if (!window.electronAPI || !window.electronAPI.aiSaveConfig) { toast('保存功能不可用'); return; }
+  try {
+    const sr = await window.electronAPI.aiSaveConfig({ section, data });
+    if (!sr || !sr.success) { toast('保存失败: ' + (sr?.error || '未知错误')); return; }
+    toast((section === 'ai_image' ? '生图' : '生视频') + '大模型设置已保存'); await loadAIConfigs();
   } catch (e) { toast('保存失败: ' + e.message); }
 }
 

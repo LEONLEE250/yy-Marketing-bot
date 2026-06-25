@@ -106,23 +106,51 @@ function downloadToTemp(url, tmpDir, prefix = '') {
   });
 }
 
-// ── 工具：联网搜索（DuckDuckGo 免费 API）──
+// ── 工具：联网搜索（DuckDuckGo + Bing 多路回退）──
 async function webSearch(query, maxResults = 5) {
-  const apiUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+  // 方案1: DuckDuckGo Instant Answer API（3秒超时快速失败）
   try {
-    const resp = await getJSON(apiUrl, {}, 8000);
-    if (resp.status !== 200) return [];
-    const d = resp.data;
+    const apiUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+    const resp = await getJSON(apiUrl, {}, 3000);
+    if (resp.status === 200 && resp.data) {
+      const d = resp.data;
+      const results = [];
+      if (d.AbstractText) results.push({ title: d.Heading || '', snippet: d.AbstractText, url: d.AbstractURL || '' });
+      if (Array.isArray(d.RelatedTopics)) {
+        for (const t of d.RelatedTopics) {
+          if (t.Text && results.length < maxResults) results.push({ title: '', snippet: t.Text, url: t.FirstURL || '' });
+        }
+      }
+      if (results.length > 0) return results;
+    }
+  } catch (_) {}
+
+  // 方案2: Bing 搜索（国内可访问，解析 HTML）
+  try {
+    const bingUrl = `https://cn.bing.com/search?q=${encodeURIComponent(query)}&count=${maxResults}`;
+    const resp = await getJSON(bingUrl, { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }, 6000);
+    // getJSON 处理 HTML 时 resp.data 为字符串
+    const html = typeof resp.data === 'string' ? resp.data : JSON.stringify(resp.data);
     const results = [];
-    if (d.AbstractText) results.push({ title: d.Heading || '', snippet: d.AbstractText, url: d.AbstractURL || '' });
-    if (Array.isArray(d.RelatedTopics)) {
-      for (const t of d.RelatedTopics) {
-        if (t.Text && results.length < maxResults) results.push({ title: '', snippet: t.Text, url: t.FirstURL || '' });
+    // 用正则提取 Bing 搜索结果（li.b_algo 中的 h2>a 和 p）
+    const blockRe = /<li class="b_algo"[^>]*>([\s\S]*?)<\/li>/gi;
+    let match;
+    while ((match = blockRe.exec(html)) !== null && results.length < maxResults) {
+      const block = match[1];
+      const titleMatch = /<a[^>]*>([\s\S]*?)<\/a>/i.exec(block);
+      const snippetMatch = /<p[^>]*>([\s\S]*?)<\/p>/i.exec(block);
+      if (titleMatch && snippetMatch) {
+        const title = titleMatch[1].replace(/<[^>]+>/g, '').trim();
+        const snippet = snippetMatch[1].replace(/<[^>]+>/g, '').trim();
+        if (snippet.length > 10) results.push({ title, snippet });
       }
     }
-    return results;
-  } catch (_) { return []; }
+    if (results.length > 0) return results;
+  } catch (_) {}
+
+  return [];
 }
+
 
 // ═══════════════════════════════════════════════════════
 //  LLM 对话（OpenAI 兼容 Chat Completions API）

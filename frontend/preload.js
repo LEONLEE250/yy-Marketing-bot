@@ -1,4 +1,22 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const fs = require('fs');
+const path = require('path');
+
+// 直接读取 config.json（与 Flask backend 同一个文件），零 IPC 延迟
+// 在 DOMContentLoaded 之前注入 window.__aiImageConfig
+var __aiImageConfig = { ai_image: {}, ai_video: {} };
+try {
+  var cfgPath = path.join(process.env.APPDATA || '', 'yizhun-wechat-bot-preview', 'config.json');
+  if (fs.existsSync(cfgPath)) {
+    var cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+    __aiImageConfig = {
+      ai_image: cfg.ai_image || {},
+      ai_video: cfg.ai_video || {},
+    };
+  }
+} catch (_) {}
+
+contextBridge.exposeInMainWorld('__aiImageConfig', __aiImageConfig);
 
 contextBridge.exposeInMainWorld('electronAPI', {
   minimize: () => ipcRenderer.send('window-minimize'),
@@ -32,4 +50,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   aiGetConfig: () => ipcRenderer.invoke('ai-get-config'),
   aiSaveConfig: (data) => ipcRenderer.invoke('ai-save-config', data),
   selectReferenceImage: () => ipcRenderer.invoke('select-reference-image'),
+  selectFile: (types) => ipcRenderer.invoke('select-file', types),
+  selectFolder: () => ipcRenderer.invoke('select-folder'),
+
+  dbList: () => ipcRenderer.invoke('db-list'),
+  dbGetPath: () => ipcRenderer.invoke('db-get-path'),
+  dbSetPath: (dir) => ipcRenderer.invoke('db-set-path', dir),
+  dbAdd: (item) => ipcRenderer.invoke('db-add', item),
+  dbUpdate: (data) => ipcRenderer.invoke('db-update', data),
+  dbDelete: (id) => ipcRenderer.invoke('db-delete', id),
+  dbSearch: (data) => ipcRenderer.invoke('db-search', data),
 });

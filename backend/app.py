@@ -25,7 +25,7 @@ app = Flask(__name__)
 CORS(app)
 
 # ── 应用标识 ──────────────────────────────────────────
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.5.0"
 APP_CHANNEL = "preview"
 APP_PORT = 5680
 APP_STARTED_AT = time.time()
@@ -64,6 +64,8 @@ DEFAULT_CONFIG = {
         "model": "gpt-4o-mini",
         "tested": False
     },
+    "ai_image": {},
+    "ai_video": {},
     "fallback": {
         "use_scripts": True,
         "allow_manual": True

@@ -36,7 +36,7 @@ process.on('uncaughtException', (err) => {
 // ── Preview 常量 ──────────────────────────────────────────
 const BACKEND_PORT = 5680;
 const EXPECTED_CHANNEL = 'preview';
-const EXPECTED_VERSION = '3.0.0';
+const EXPECTED_VERSION = '3.5.0';
 
 let mainWindow;
 let backendProcess;
@@ -232,6 +232,18 @@ function createWindow() {
     else mainWindow.maximize();
   });
   ipcMain.on('window-close', () => mainWindow.close());
+
+  // 同步读取 AI 配置（在 preload 阶段注入，使用隔离文件，避免 Flask 干扰）
+  ipcMain.on('get-ai-config-sync', (event) => {
+    const mediaCfg = _loadMediaConfig();
+    const sharedCfg = _loadAIConfig();
+    // 优先隔离文件，回退共享文件
+    const ai_image = (mediaCfg && mediaCfg.ai_image && Object.keys(mediaCfg.ai_image).length > 0)
+      ? mediaCfg.ai_image : ((sharedCfg && sharedCfg.ai_image) || {});
+    const ai_video = (mediaCfg && mediaCfg.ai_video && Object.keys(mediaCfg.ai_video).length > 0)
+      ? mediaCfg.ai_video : ((sharedCfg && sharedCfg.ai_video) || {});
+    event.returnValue = { ai_image, ai_video };
+  });
 
   // 返回当前 runtime meta
   ipcMain.handle('get-runtime-meta', async () => {
@@ -527,6 +539,12 @@ function createWindow() {
     if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
     return path.join(dataDir, 'config.json');
   }
+  // 图片/视频配置使用独立的隔离文件（userData 目录，Flask 绝不会碰）
+  function _getMediaConfigPath() {
+    const dir = path.join(app.getPath('userData'), 'ai-config');
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    return path.join(dir, 'ai-media-config.json');
+  }
   function _loadAIConfig() {
     const p = _getAIConfigPath();
     if (!fs.existsSync(p)) return {};
@@ -537,16 +555,31 @@ function createWindow() {
     const p = _getAIConfigPath();
     fs.writeFileSync(p, JSON.stringify(obj, null, 2), 'utf-8');
   }
+  // 隔离文件的读写函数（不受 Flask 干扰）
+  function _loadMediaConfig() {
+    const p = _getMediaConfigPath();
+    if (!fs.existsSync(p)) return {};
+    const raw = fs.readFileSync(p, 'utf-8');
+    try { return JSON.parse(raw); } catch (_) { return {}; }
+  }
+  function _saveMediaConfig(obj) {
+    const p = _getMediaConfigPath();
+    fs.writeFileSync(p, JSON.stringify(obj, null, 2), 'utf-8');
+  }
 
   ipcMain.handle('ai-get-config', async () => {
     try {
+      const mediaCfg = _loadMediaConfig();
       const full = _loadAIConfig() || {};
+      // 优先使用隔离文件中的数据，回退到共享文件
       return {
         success: true,
         config: {
           ai: full.ai || {},
-          ai_image: full.ai_image || {},
-          ai_video: full.ai_video || {},
+          ai_image: (mediaCfg.ai_image && Object.keys(mediaCfg.ai_image).length > 0)
+            ? mediaCfg.ai_image : (full.ai_image || {}),
+          ai_video: (mediaCfg.ai_video && Object.keys(mediaCfg.ai_video).length > 0)
+            ? mediaCfg.ai_video : (full.ai_video || {}),
         },
       };
     } catch (e) { return { success: false, error: e.message }; }
@@ -554,17 +587,30 @@ function createWindow() {
 
   ipcMain.handle('ai-save-config', async (event, { section, data }) => {
     try {
+      // ── 写入隔离文件（主要存储，Flask 无访问）──
+      let mediaCfg = _loadMediaConfig();
+      if (typeof mediaCfg !== 'object' || mediaCfg === null) mediaCfg = {};
+      var existing = mediaCfg[section] || {};
+      var merged = {};
+      Object.keys(existing).forEach(function(k) { merged[k] = existing[k]; });
+      Object.keys(data).forEach(function(k) {
+        if (data[k] !== undefined && data[k] !== null && data[k] !== '') merged[k] = data[k];
+      });
+      mediaCfg[section] = merged;
+      _saveMediaConfig(mediaCfg);
+
+      // ── 同步写入共享 config.json（保持与 Flask 兼容）──
       let full = _loadAIConfig();
-      // 安全保护：config.json 不存在或损坏时绝不覆盖写入
       if (full === null) {
         const p = _getAIConfigPath();
-        if (!fs.existsSync(p)) {
-          full = {};  // 文件不存在 → 允许创建新文件
-        } else {
-          return { success: false, error: 'config.json 读取失败，为保护已有配置，本次写入已取消' };
-        }
+        if (!fs.existsSync(p)) { full = {}; }
+        else { return { success: true }; }  // 共享文件损坏但不影响隔离文件，返回成功
       }
-      full[section] = { ...(full[section] || {}), ...data };
+      full[section] = merged;
+      if (!full.ai) full.ai = { enabled: true };
+      if (!full.fallback) full.fallback = { use_scripts: true, allow_manual: true };
+      if (!full.broadcast) full.broadcast = {};
+      if (!full.app) full.app = { version: EXPECTED_VERSION, update_channel: 'github' };
       _saveAIConfig(full);
       return { success: true };
     } catch (e) { return { success: false, error: e.message }; }
@@ -627,6 +673,7 @@ function createWindow() {
       }
 
       // 联网搜索：从最后一条用户消息提取搜索词，注入结果到系统提示
+      let searchInfo = null;
       if (searchEnabled) {
         const lastUser = [...processedMessages].reverse().find(m => m.role === 'user');
         if (lastUser) {
@@ -634,14 +681,17 @@ function createWindow() {
           if (query) {
             try {
               const searchResults = await aiService.webSearch(query, 3);
-              if (searchResults.length > 0) {
+              if (searchResults && searchResults.length > 0) {
                 const searchText = searchResults.map((r, i) => `${i + 1}. ${r.snippet}`).join('\n');
                 processedMessages.unshift({
                   role: 'system',
                   content: `以下是与用户问题相关的实时网络搜索结果，请参考这些信息回答：\n${searchText}`,
                 });
+                searchInfo = { success: true, count: searchResults.length, query };
+              } else {
+                searchInfo = { success: false, reason: '无搜索结果', query };
               }
-            } catch (_) {}
+            } catch (_) { searchInfo = { success: false, reason: '搜索超时', query }; }
           }
         }
       }
@@ -649,6 +699,7 @@ function createWindow() {
       _aiAbortController = new AbortController();
       const result = await aiService.chatCompletion(cfg, processedMessages, _aiAbortController.signal);
       _aiAbortController = null;
+      if (searchInfo) result.searchInfo = searchInfo;
       return result;
     } catch (e) {
       _aiAbortController = null;
@@ -711,6 +762,114 @@ function createWindow() {
       filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'bmp', 'webp'] }],
     });
     return result.canceled ? null : result.filePaths[0];
+  });
+
+  // 选择多类型文件（图片/视频/文档）
+  ipcMain.handle('select-file', async (event, types) => {
+    const filters = [];
+    if (!types || types.includes('image')) filters.push({ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'bmp', 'webp', 'gif'] });
+    if (!types || types.includes('video')) filters.push({ name: '视频', extensions: ['mp4', 'avi', 'mov', 'mkv', 'wmv'] });
+    if (!types || types.includes('doc')) filters.push({ name: '文档', extensions: ['txt', 'doc', 'docx', 'pdf'] });
+    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'], filters });
+    return result.canceled ? null : result.filePaths[0];
+  });
+
+  // 选择文件夹（存储目录用）
+  ipcMain.handle('select-folder', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] });
+    return result.canceled ? null : result.filePaths[0];
+  });
+  // 从配置读取存储目录（使用统一的 _loadAIConfig / _saveAIConfig 避免数据损坏）
+  let _storageDir = (() => {
+    const cfg = _loadAIConfig() || {};
+    if (cfg.storage_dir && fs.existsSync(cfg.storage_dir)) return cfg.storage_dir;
+    return path.join(app.getPath('userData'), 'resources');
+  })();
+
+  // 确保隔离文件和共享文件都包含 ai_image / ai_video 段
+  (() => {
+    const cfg = _loadAIConfig();
+    if (cfg && !cfg.ai_image) { cfg.ai_image = {}; _saveAIConfig(cfg); }
+    if (cfg && !cfg.ai_video) { cfg.ai_video = {}; _saveAIConfig(cfg); }
+    // 隔离文件也初始化
+    const mcfg = _loadMediaConfig();
+    if (!mcfg.ai_image) { mcfg.ai_image = {}; _saveMediaConfig(mcfg); }
+    if (!mcfg.ai_video) { mcfg.ai_video = {}; _saveMediaConfig(mcfg); }
+  })();
+
+  const _dbFile = path.join(app.getPath('userData'), 'resource-db.json');
+
+  function _dbRead() {
+    try { const raw = fs.readFileSync(_dbFile, 'utf-8'); return JSON.parse(raw); }
+    catch { return []; }
+  }
+  function _dbWrite(items) {
+    fs.writeFileSync(_dbFile, JSON.stringify(items, null, 2), 'utf-8');
+  }
+  function _dbNextId() { return 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8); }
+
+  ipcMain.handle('db-list', async () => _dbRead());
+  ipcMain.handle('db-get-path', async () => _storageDir);
+
+  ipcMain.handle('db-set-path', async (event, dir) => {
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    _storageDir = dir;
+    // 持久化 — 使用统一的 _loadAIConfig/_saveAIConfig，不会损坏已有数据
+    const cfg = _loadAIConfig();
+    if (cfg !== null) {
+      cfg.storage_dir = dir;
+      _saveAIConfig(cfg);
+    }
+    return { success: true, dir };
+  });
+
+  ipcMain.handle('db-add', async (event, item) => {
+    const list = _dbRead();
+    const now = Date.now();
+    const entry = { id: _dbNextId(), type: item.type || 'text', title: item.title || '', tags: item.tags || [], content: item.content || '', filePath: item.filePath || '', thumbnail: '', createdAt: now, updatedAt: now };
+    if ((entry.type === 'image' || entry.type === 'video') && entry.filePath && fs.existsSync(entry.filePath)) {
+      const ext = path.extname(entry.filePath);
+      const dest = path.join(_storageDir, entry.id + ext);
+      try { fs.copyFileSync(entry.filePath, dest); entry.filePath = dest; } catch {}
+      if (entry.type === 'image') {
+        try { entry.thumbnail = dest; } catch {}
+      }
+    }
+    list.push(entry);
+    _dbWrite(list);
+    return { success: true, item: entry };
+  });
+
+  ipcMain.handle('db-update', async (event, { id, updates }) => {
+    const list = _dbRead();
+    const idx = list.findIndex(x => x.id === id);
+    if (idx < 0) return { success: false, error: '未找到' };
+    Object.assign(list[idx], updates, { updatedAt: Date.now() });
+    _dbWrite(list);
+    return { success: true, item: list[idx] };
+  });
+
+  ipcMain.handle('db-delete', async (event, id) => {
+    const list = _dbRead();
+    const idx = list.findIndex(x => x.id === id);
+    if (idx < 0) return { success: false, error: '未找到' };
+    const removed = list.splice(idx, 1)[0];
+    _dbWrite(list);
+    // 清理文件
+    if (removed.filePath && fs.existsSync(removed.filePath)) {
+      try { fs.unlinkSync(removed.filePath); } catch {}
+    }
+    return { success: true };
+  });
+
+  ipcMain.handle('db-search', async (event, { query, type }) => {
+    const list = _dbRead();
+    const q = (query || '').toLowerCase();
+    return list.filter(x => {
+      if (type && x.type !== type) return false;
+      if (!q) return true;
+      return (x.title || '').toLowerCase().includes(q) || (x.content || '').toLowerCase().includes(q) || (x.tags || []).some(t => t.toLowerCase().includes(q));
+    });
   });
 
   // ═══════════════════════════════════════════════════
