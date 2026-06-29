@@ -23,11 +23,10 @@
     </div>
     <div class="tabs" id="tabs">
       <button class="tab active" data-tab="0">多平台分发</button>
-      <button class="tab" data-tab="1">群发中心</button>
-      <button class="tab" data-tab="2">朋友圈</button>
-      <button class="tab" data-tab="3">AI 创意中心</button>
-      <button class="tab" data-tab="4">资源库</button>
-      <button class="tab" data-tab="5">设置</button>
+      <button class="tab" data-tab="1">微信助手</button>
+      <button class="tab" data-tab="2">AI 创意中心</button>
+      <button class="tab" data-tab="3">资源库</button>
+      <button class="tab" data-tab="4">设置</button>
     </div>
   </div>
 
@@ -127,8 +126,13 @@
       </div>
     </div>
 
-    <!-- Tab 1: 群发中心 -->
+    <!-- Tab 1: 微信助手 (data-panel="1") -->
     <div class="panel" data-panel="1">
+      <div class="wechat-subtabs" style="display:flex;gap:6px;margin-bottom:12px">
+        <button class="wechat-subtab active" data-wechat="broadcast" onclick="switchWechatSub('broadcast')">📨 群发中心</button>
+        <button class="wechat-subtab" data-wechat="moments" onclick="switchWechatSub('moments')">💬 朋友圈</button>
+      </div>
+      <div class="wechat-subpanel active" data-wechat-panel="broadcast">
       <div class="two-col">
         <!-- 左栏：图片 + 文案 -->
         <div class="col">
@@ -222,10 +226,9 @@
           </div>
         </div>
       </div>
-    </div>
+      </div>
 
-    <!-- Tab 2: 朋友圈 (data-panel="2") -->
-    <div class="panel" data-panel="2">
+      <div class="wechat-subpanel" data-wechat-panel="moments">
       <!-- 定时任务清单 -->
       <div class="schedule-banner hidden" id="momentScheduledTasksCard">
         <div class="schedule-banner-head">
@@ -305,10 +308,11 @@
         </div>
         <div class="log-card" id="momentLogList"></div>
       </div>
+      </div>
     </div>
 
-    <!-- Tab 3: AI 创意中心 (data-panel="3") -->
-    <div class="panel" data-panel="3">
+    <!-- Tab 2: AI 创意中心 (data-panel="2") -->
+    <div class="panel" data-panel="2">
       <!-- 子 Tab -->
       <div class="ai-subtabs">
         <button class="ai-subtab active" data-aisub="0">💬 AI生文案</button>
@@ -377,8 +381,8 @@
       </div>
     </div>
 
-    <!-- Tab 4: 资源库 (data-panel="4") -->
-    <div class="panel" data-panel="4">
+    <!-- Tab 3: 资源库 (data-panel="3") -->
+    <div class="panel" data-panel="3">
       <!-- 工具栏 -->
       <div class="db-toolbar">
         <input class="input small" id="dbSearchInput" placeholder="搜索标题/内容/标签…" oninput="dbFilter()" style="flex:1;min-width:160px" />
@@ -467,8 +471,8 @@
       </div>
     </div>
 
-    <!-- Tab 5: 设置 (data-panel="5") -->
-    <div class="panel" data-panel="5">
+    <!-- Tab 4: 设置 (data-panel="4") -->
+    <div class="panel" data-panel="4">
       <div id="aiConfigDebug" style="background:#fff3cd;padding:6px 12px;font-size:12px;color:#856404;border-radius:6px;margin-bottom:12px;display:none"></div>
       <div class="two-col">
         <div class="col">
@@ -562,9 +566,12 @@
           <div class="card about-card">
             <div class="about-info">
               <div class="about-name">壹准AI营销助手</div>
-              <div class="about-version" id="aboutVersion">v4.0.0 · 2026</div>
+              <div class="about-version" id="aboutVersion">v4.0.1 · 2026</div>
             </div>
-            <button class="btn btn-ghost btn-sm" onclick="checkUpdate()">检查更新</button>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-primary btn-sm" onclick="openGuide()">📖 产品使用指南</button>
+              <button class="btn btn-ghost btn-sm" onclick="checkUpdate()">检查更新</button>
+            </div>
           </div>
         </div>
       </div>

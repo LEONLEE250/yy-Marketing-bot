@@ -78,9 +78,19 @@ function setupTabs() {
       document.querySelector(`[data-panel="${idx}"]`).classList.add('active');
       state.currentTab = idx;
       // 切换到设置 Tab 时强制刷新 AI 配置
-      if (idx === 5) { if (typeof loadAIConfigs === 'function') loadAIConfigs(); }
+      if (idx === 4) { if (typeof loadAIConfigs === 'function') loadAIConfigs(); }
     });
   });
+}
+
+/** 微信助手子标签切换 */
+function switchWechatSub(name) {
+  document.querySelectorAll('.wechat-subtab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.wechat-subpanel').forEach(p => p.classList.remove('active'));
+  const tab = document.querySelector(`.wechat-subtab[data-wechat="${name}"]`);
+  if (tab) tab.classList.add('active');
+  const panel = document.querySelector(`.wechat-subpanel[data-wechat-panel="${name}"]`);
+  if (panel) panel.classList.add('active');
 }
 
 // ============================================================
@@ -955,6 +965,15 @@ async function _silent_check() {
     const res = await fetch(`${API}/api/status`);
     await res.json();
   } catch (_) {}
+}
+
+// ============================================================
+// 产品使用指南
+// ============================================================
+
+function openGuide() {
+  var url = 'https://7bbf09e4ade04b45ba515b0a51e96f53.app.codebuddy.work';
+  window.open(url, '_blank');
 }
 
 // ============================================================
@@ -2861,8 +2880,8 @@ function dbPickerMainFill() {
 var orig = window.openTab;
   window.openTab = function(idx) {
     if (orig) orig.call(window, idx);
-    if (idx === 4) setTimeout(dbLoad, 200);
-    if (idx === 5) setTimeout(function() { if (typeof loadAIConfigs === "function") loadAIConfigs(); }, 300);
+    if (idx === 3) setTimeout(dbLoad, 200);
+    if (idx === 4) setTimeout(function() { if (typeof loadAIConfigs === "function") loadAIConfigs(); }, 300);
   };
 })();
 setTimeout(dbLoad, 500);

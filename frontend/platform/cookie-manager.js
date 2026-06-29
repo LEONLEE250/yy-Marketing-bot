@@ -3,7 +3,7 @@ const { chromium } = require('patchright');
 const path = require('path');
 const fs = require('fs');
 const { antiDetectScript } = require('./anti-detect.js');
-const { detectBrowserChannel } = require('./base-uploader.js');
+const { detectBrowserChannel, findBrowserPath } = require('./base-uploader.js');
 
 // ── Cookie 校验（用系统浏览器 + channel）──
 
@@ -16,11 +16,11 @@ async function checkDouyinCookie(cookiePath) {
   } catch { return false; }
 
   let browser = null;
-  const channel = detectBrowserChannel();
+  const browserPath = findBrowserPath();
   try {
     browser = await chromium.launch({
       headless: false,
-      channel,
+      ...browserPath,
       args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
     });
     const context = await browser.newContext({ storageState: cookiePath });
@@ -47,7 +47,7 @@ async function checkDouyinCookie(cookiePath) {
 
 async function loginDouyin(cookiePath, cookieDir, accountName, onQRCode) {
   let context = null;
-  const channel = detectBrowserChannel();
+  const browserPath = findBrowserPath();
   const userDataDir = path.join(cookieDir, 'profiles', accountName || 'default');
   try {
     if (!fs.existsSync(userDataDir)) fs.mkdirSync(userDataDir, { recursive: true });
@@ -55,7 +55,7 @@ async function loginDouyin(cookiePath, cookieDir, accountName, onQRCode) {
     // 持久化 context — 替代 chromium.launch + user-data-dir args
     context = await chromium.launchPersistentContext(userDataDir, {
       headless: false,
-      channel,
+      ...browserPath,
       locale: 'zh-CN',
       timezoneId: 'Asia/Shanghai',
       permissions: ['geolocation'],

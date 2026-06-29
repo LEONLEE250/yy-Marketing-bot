@@ -17,6 +17,54 @@ function detectBrowserChannel() {
   return 'chrome';
 }
 
+/**
+ * 查找系统浏览器可执行文件路径（跨架构兼容：32位 / 64位 通用）
+ * @returns {{ executablePath?: string, channel?: string }}
+ */
+function findBrowserPath() {
+  // ── Chrome 路径（按优先级） ──
+  const chromePaths = [
+    process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  ];
+  for (const p of chromePaths) {
+    if (fs.existsSync(p)) return { executablePath: p };
+  }
+
+  // ── Edge 路径 ──
+  const edgePaths = [
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    process.env.LOCALAPPDATA + '\\Microsoft\\Edge\\Application\\msedge.exe',
+  ];
+  for (const p of edgePaths) {
+    if (fs.existsSync(p)) return { executablePath: p };
+  }
+
+  // ── 宽搜：用 where 命令 ──
+  try {
+    const result = require('child_process').execSync('where chrome 2>nul', { encoding: 'utf8', timeout: 3000 });
+    const lines = result.trim().split('\n').filter(l => l.toLowerCase().includes('chrome'));
+    for (const line of lines) {
+      const exe = line.trim();
+      if (fs.existsSync(exe)) return { executablePath: exe };
+    }
+  } catch (_) {}
+
+  try {
+    const result = require('child_process').execSync('where msedge 2>nul', { encoding: 'utf8', timeout: 3000 });
+    const lines = result.trim().split('\n').filter(l => l.toLowerCase().includes('msedge'));
+    for (const line of lines) {
+      const exe = line.trim();
+      if (fs.existsSync(exe)) return { executablePath: exe };
+    }
+  } catch (_) {}
+
+  // ── 最终回退：用 channel（patchright 自带检测）──
+  return { channel: 'chrome' };
+}
+
 class BasePlatformUploader {
   SUPPORTED_VIDEO = ['.mp4', '.mov', '.avi', '.mkv', '.m4v', '.webm', '.flv', '.wmv'];
   SUPPORTED_IMAGE = ['.jpg', '.jpeg', '.png', '.webp', '.bmp'];
@@ -29,7 +77,9 @@ class BasePlatformUploader {
     this.browser = null;
     this.context = null;
     this.page = null;
+    // 优先用精确路径（跨架构：32位/64位通用），回退到 channel
     this.browserChannel = browserChannel || detectBrowserChannel();
+    this._browserPath = findBrowserPath();
   }
 
   /** 文件格式+存在性验证 */
@@ -57,8 +107,10 @@ class BasePlatformUploader {
 
   /** 启动浏览器（patchright + system Edge/Chrome + 持久化 Profile） */
   async launchBrowser({ headless = false } = {}) {
-    const channel = this.browserChannel;
-    this.log?.(`🌐 使用 ${channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome'}（patchright + 持久化 Profile）`);
+    const browserName = this._browserPath.channel
+      ? (this._browserPath.channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome')
+      : '系统浏览器';
+    this.log?.(`🌐 使用 ${browserName}（patchright + 持久化 Profile），路径: ${this._browserPath.executablePath || '(channel 检测)'}`);
 
     if (!fs.existsSync(this.userDataDir)) {
       fs.mkdirSync(this.userDataDir, { recursive: true });
@@ -67,7 +119,7 @@ class BasePlatformUploader {
     // 使用 launchPersistentContext 替代 args/--user-data-dir
     this.context = await chromium.launchPersistentContext(this.userDataDir, {
       headless,
-      channel,
+      ...this._browserPath,  // 展开 executablePath 或 channel
       locale: 'zh-CN',
       timezoneId: 'Asia/Shanghai',
       permissions: ['geolocation'],
@@ -123,4 +175,4 @@ class BasePlatformUploader {
   }
 }
 
-module.exports = { BasePlatformUploader, detectBrowserChannel };
+module.exports = { BasePlatformUploader, detectBrowserChannel, findBrowserPath };

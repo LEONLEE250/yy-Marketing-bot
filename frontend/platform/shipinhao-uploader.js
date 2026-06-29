@@ -1,7 +1,7 @@
 // ── 微信视频号上传器 ──
 // 登录: https://channels.weixin.qq.com/login.html
 // 发布: https://channels.weixin.qq.com/platform/post/create
-const { BasePlatformUploader, detectBrowserChannel } = require('./base-uploader.js');
+const { BasePlatformUploader, findBrowserPath } = require('./base-uploader.js');
 const { chromium } = require('patchright');
 const path = require('path');
 const fs = require('fs');
@@ -19,7 +19,7 @@ async function loginShipinhao(cookiePath, cookieDir, accountName, onQRCode) {
 
     context = await chromium.launchPersistentContext(userDataDir, {
       headless: false,
-      channel: detectBrowserChannel(),
+      ...findBrowserPath(),
       args: [
         '--no-sandbox',
         '--no-first-run',
@@ -112,19 +112,23 @@ class ShipinhaoUploader extends BasePlatformUploader {
     this.thumbnailPath = opts.thumbnailPath || '';
     this.onLog = opts.onLog || (() => {});
     this.browser = null; // 视频号不继承基类 launchPersistentContext,用独立 launch
+    // 确保 _browserPath 已初始化（父类构造函数调用时可能未执行至此）
+    if (!this._browserPath) this._browserPath = findBrowserPath();
   }
 
   log(msg) { this.onLog(msg); }
 
   /** 重写启动浏览器 —— 对齐 social-auto-upload：极简 launch + storageState */
   async launchBrowser({ headless = false } = {}) {
-    const channel = this.browserChannel;
-    this.log(`🌐 启动浏览器（${channel}）...`);
+    const browserName = this._browserPath.channel
+      ? (this._browserPath.channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome')
+      : '系统浏览器';
+    this.log(`🌐 启动浏览器（${browserName}），路径: ${this._browserPath.executablePath || '(channel 检测)'}`);
 
-    // social-auto-upload 方式：只用 channel + headless，不传任何 args
+    // social-auto-upload 方式：只用 channel/executablePath + headless，不传任何 args
     this.browser = await chromium.launch({
       headless,
-      channel,
+      ...this._browserPath,
     });
     this.context = await this.browser.newContext({
       storageState: this.cookiePath,

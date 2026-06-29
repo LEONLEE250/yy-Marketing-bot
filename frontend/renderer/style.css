@@ -546,6 +546,24 @@ body {
   background:var(--accent); color:#fff; font-weight:600;
 }
 
+/* ── 微信助手 子标签 ── */
+.wechat-subtabs {
+  display:flex; gap:4px; padding:6px 8px; margin-bottom:12px;
+  background:var(--surface); border-radius:var(--radius-elem);
+  border:1px solid var(--border);
+}
+.wechat-subtab {
+  flex:1; padding:8px 12px; border:none; border-radius:7px;
+  background:transparent; color:var(--text2); font-size:13px;
+  cursor:pointer; transition:all .15s; text-align:center;
+}
+.wechat-subtab:hover { color:var(--text); background:var(--hover); }
+.wechat-subtab.active {
+  background:var(--accent); color:#fff; font-weight:600;
+}
+.wechat-subpanel { display:none; }
+.wechat-subpanel.active { display:block; }
+
 /* ── 模式参数行（尺寸/时长）── */
 .ai-mode-params { margin-bottom:6px; }
 .ai-mode-param-row { display:flex; align-items:center; gap:8px; padding:4px 0; }
