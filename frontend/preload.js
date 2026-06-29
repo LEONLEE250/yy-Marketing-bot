@@ -60,4 +60,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbUpdate: (data) => ipcRenderer.invoke('db-update', data),
   dbDelete: (id) => ipcRenderer.invoke('db-delete', id),
   dbSearch: (data) => ipcRenderer.invoke('db-search', data),
+
+  // ── 多平台分发 ──
+  platformInit: () => ipcRenderer.invoke('platform:init'),
+  platformCheckDouyin: (data) => ipcRenderer.invoke('platform:check-douyin', data),
+  platformCheckDouyinQuick: (data) => ipcRenderer.invoke('platform:check-douyin-quick', data),
+  platformLoginDouyin: (data) => ipcRenderer.invoke('platform:login-douyin', data),
+  platformPublishDouyin: (data) => ipcRenderer.invoke('platform:publish-douyin', data),
+  platformCancelPublish: () => ipcRenderer.invoke('platform:cancel-publish'),
+  platformCheckFile: (data) => ipcRenderer.invoke('platform:check-file', data),
+  platformLogout: (data) => ipcRenderer.invoke('platform:logout', data),
+  platformGetBrowser: () => ipcRenderer.invoke('platform:get-browser'),
+  platformListAccounts: () => ipcRenderer.invoke('platform:list-accounts'),
+  platformAddAccount: (data) => ipcRenderer.invoke('platform:add-account', data),
+  // 视频号
+  platformListShipinhaoAccounts: () => ipcRenderer.invoke('platform:list-shipinhao-accounts'),
+  platformCheckShipinhaoQuick: (data) => ipcRenderer.invoke('platform:check-shipinhao-quick', data),
+  platformCheckShipinhao: (data) => ipcRenderer.invoke('platform:check-shipinhao', data),
+  platformLoginShipinhao: (data) => ipcRenderer.invoke('platform:login-shipinhao', data),
+  platformPublishShipinhao: (data) => ipcRenderer.invoke('platform:publish-shipinhao', data),
+  onPlatformQRCode: (callback) => ipcRenderer.on('platform:qrcode', (event, data) => callback(data)),
+  onPlatformLog: (callback) => ipcRenderer.on('platform:log', (event, data) => callback(data)),
 });

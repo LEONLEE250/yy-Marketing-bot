@@ -22,19 +22,113 @@
       </div>
     </div>
     <div class="tabs" id="tabs">
-      <button class="tab active" data-tab="0">群发中心</button>
-      <button class="tab" data-tab="1">朋友圈</button>
-      <button class="tab" data-tab="2">AI 创意中心</button>
-      <button class="tab" data-tab="3">资源库</button>
-      <button class="tab" data-tab="4">设置</button>
+      <button class="tab active" data-tab="0">多平台分发</button>
+      <button class="tab" data-tab="1">群发中心</button>
+      <button class="tab" data-tab="2">朋友圈</button>
+      <button class="tab" data-tab="3">AI 创意中心</button>
+      <button class="tab" data-tab="4">资源库</button>
+      <button class="tab" data-tab="5">设置</button>
     </div>
   </div>
 
   <!-- 内容区 -->
   <div class="content" id="content">
 
-    <!-- Tab 0: 群发中心 -->
+    <!-- Tab 0: 多平台分发 -->
     <div class="panel active" data-panel="0">
+
+      <!-- ── 账号管理 ── -->
+      <div class="card" id="platformAccountSection">
+        <div class="card-label" style="display:flex;align-items:center;justify-content:space-between">
+          <span>账号管理</span>
+          <span class="platform-status" id="platformStatus" style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:6px">
+            <span id="platformStatusDot" class="status-dot gray"></span>
+            <span id="platformStatusText">检查中...</span>
+          </span>
+        </div>
+        <!-- 平台切换 Tab -->
+        <div style="display:flex;gap:4px;margin-top:6px;margin-bottom:6px">
+          <button class="platform-tab platform-tab-active" data-platform="douyin" onclick="platformSwitchTab('douyin')">🎵 抖音</button>
+          <button class="platform-tab" data-platform="shipinhao" onclick="platformSwitchTab('shipinhao')">📺 视频号</button>
+        </div>
+        <div style="margin-top:4px">
+          <div id="platformAccountList" style="display:flex;flex-direction:column;gap:4px">
+            <!-- 由 JS 动态渲染 -->
+          </div>
+          <!-- 添加并登录 / 刷新状态 -->
+          <div style="display:flex;gap:6px;margin-top:10px;align-items:center">
+            <button class="btn btn-ghost btn-sm" id="platformAddBtn" onclick="platformAddNewAccount()">➕ 添加并登录</button>
+            <button class="btn btn-ghost btn-sm" onclick="platformRefreshStatus()" style="font-size:12px">🔄 刷新状态</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 发布管理 ── -->
+      <div style="margin-top:10px">
+        <div class="card">
+          <div class="card-label">发布视频</div>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <input class="input" id="platformTitle" placeholder="视频标题（必填，最多30字）" maxlength="30" style="flex:1" oninput="platformUpdateTitleCount()">
+              <span id="platformTitleCount" style="font-size:11px;color:var(--text3);min-width:30px;text-align:right">0/30</span>
+            </div>
+            <!-- 平台限制提示 -->
+            <div id="platformHints" style="font-size:11px;color:var(--warning);background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.12);border-radius:8px;padding:6px 10px;display:none">
+              📺 视频号：标题不含标点符号（已自动过滤），标签以 # 话题 形式填入
+            </div>
+            <div class="upload-zone-sm" id="platformVideoZone" onclick="platformSelectVideo()">
+              <div id="platformVideoText">点击选择视频文件（MP4 / MOV / AVI / MKV）</div>
+              <div id="platformVideoPath" class="hidden" style="font-size:12px;color:var(--accent);margin-top:4px"></div>
+            </div>
+            <div style="position:relative">
+              <textarea class="textarea" id="platformDesc" placeholder="视频描述（可选，建议≤1000字）" rows="2" oninput="platformUpdateDescCount()"></textarea>
+              <span id="platformDescCount" style="position:absolute;bottom:6px;right:8px;font-size:10px;color:var(--text3)">0字</span>
+            </div>
+            <input class="input" id="platformTags" placeholder="话题标签，用逗号分隔，最多10个（如: 科技,数码）">
+            <div style="display:flex;gap:8px;align-items:center">
+              <label style="font-size:12px;color:var(--text2);white-space:nowrap">封面图片路径</label>
+              <input class="input" id="platformThumbnail" placeholder="建议≥720×1280，不符合抖音标准会被拒" style="flex:1">
+              <button class="btn btn-ghost btn-sm" onclick="platformSelectThumbnail()">📁 选择</button>
+            </div>
+            <div style="display:flex;gap:12px;align-items:center;padding:8px 0">
+              <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px">
+                <input type="radio" name="publishMode" value="immediate" checked onchange="platformToggleSchedule()"> 立即发布
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px">
+                <input type="radio" name="publishMode" value="scheduled" onchange="platformToggleSchedule()"> 定时发布
+              </label>
+              <span id="platformScheduleWrap" class="hidden" style="display:inline-flex;align-items:center;gap:6px;margin-left:4px">
+                <input class="input" id="platformScheduleTime" type="datetime-local" style="width:200px">
+                <span style="font-size:10px;color:var(--text3);white-space:nowrap">抖音:2h~14天后 / 视频号:不限</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 目标账号选择 -->
+        <div class="card" style="margin-top:8px">
+          <div class="card-label">发布到账号</div>
+          <div id="platformTargetAccounts" style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+            <!-- 由 JS 动态渲染 -->
+          </div>
+        </div>
+
+        <!-- 发布按钮 -->
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-primary" id="platformPublishBtn" onclick="platformPublish()">🚀 多平台发布</button>
+          <button class="btn btn-ghost hidden" id="platformCancelBtn" onclick="platformCancelPublish()">取消</button>
+        </div>
+
+        <!-- 发布日志 -->
+        <div class="platform-log" style="margin-top:12px">
+          <div class="platform-log-title">发布日志</div>
+          <div id="platformLogContent" style="font-size:12px;color:var(--text2);line-height:1.6;max-height:200px;overflow-y:auto"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 1: 群发中心 -->
+    <div class="panel" data-panel="1">
       <div class="two-col">
         <!-- 左栏：图片 + 文案 -->
         <div class="col">
@@ -130,8 +224,8 @@
       </div>
     </div>
 
-    <!-- Tab 2: 朋友圈 (data-panel="1") -->
-    <div class="panel" data-panel="1">
+    <!-- Tab 2: 朋友圈 (data-panel="2") -->
+    <div class="panel" data-panel="2">
       <!-- 定时任务清单 -->
       <div class="schedule-banner hidden" id="momentScheduledTasksCard">
         <div class="schedule-banner-head">
@@ -213,8 +307,8 @@
       </div>
     </div>
 
-    <!-- Tab 2: AI 创意中心 (data-panel="2") -->
-    <div class="panel" data-panel="2">
+    <!-- Tab 3: AI 创意中心 (data-panel="3") -->
+    <div class="panel" data-panel="3">
       <!-- 子 Tab -->
       <div class="ai-subtabs">
         <button class="ai-subtab active" data-aisub="0">💬 AI生文案</button>
@@ -283,8 +377,8 @@
       </div>
     </div>
 
-    <!-- Tab 2: 资源库 (data-panel="3") -->
-    <div class="panel" data-panel="3">
+    <!-- Tab 4: 资源库 (data-panel="4") -->
+    <div class="panel" data-panel="4">
       <!-- 工具栏 -->
       <div class="db-toolbar">
         <input class="input small" id="dbSearchInput" placeholder="搜索标题/内容/标签…" oninput="dbFilter()" style="flex:1;min-width:160px" />
@@ -373,8 +467,8 @@
       </div>
     </div>
 
-    <!-- Tab 4: 设置 (data-panel="4") -->
-    <div class="panel" data-panel="4">
+    <!-- Tab 5: 设置 (data-panel="5") -->
+    <div class="panel" data-panel="5">
       <div id="aiConfigDebug" style="background:#fff3cd;padding:6px 12px;font-size:12px;color:#856404;border-radius:6px;margin-bottom:12px;display:none"></div>
       <div class="two-col">
         <div class="col">
@@ -468,7 +562,7 @@
           <div class="card about-card">
             <div class="about-info">
               <div class="about-name">壹准AI营销助手</div>
-              <div class="about-version" id="aboutVersion">v3.5.0 · 2026</div>
+              <div class="about-version" id="aboutVersion">v4.0.0 · 2026</div>
             </div>
             <button class="btn btn-ghost btn-sm" onclick="checkUpdate()">检查更新</button>
           </div>

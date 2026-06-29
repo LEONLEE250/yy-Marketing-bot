@@ -61,6 +61,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   checkWxStatus();
   loadBroadcastScheduledTasks();
   startBroadcastSchedulePoll();
+  platformInit();
 });
 
 // ============================================================
@@ -77,7 +78,7 @@ function setupTabs() {
       document.querySelector(`[data-panel="${idx}"]`).classList.add('active');
       state.currentTab = idx;
       // 切换到设置 Tab 时强制刷新 AI 配置
-      if (idx === 4) { if (typeof loadAIConfigs === 'function') loadAIConfigs(); }
+      if (idx === 5) { if (typeof loadAIConfigs === 'function') loadAIConfigs(); }
     });
   });
 }
@@ -766,11 +767,15 @@ async function updateScript() {
 function _showConfirm(msg) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
-    overlay.className = 'toast-overlay';
+    overlay.className = 'modal-overlay';
     overlay.innerHTML = `
-      <div class="confirm-dialog">
-        <div class="confirm-text">${msg}</div>
-        <div class="confirm-actions">
+      <div class="modal-card" style="min-width:320px;max-width:400px">
+        <div class="modal-header">
+          <span>确认</span>
+          <button class="modal-close" id="confirmClose">✕</button>
+        </div>
+        <div class="modal-body" style="text-align:center;font-size:14px;color:var(--text);padding:24px 20px">${msg}</div>
+        <div class="modal-footer">
           <button class="btn btn-ghost" id="confirmCancel">取消</button>
           <button class="btn btn-primary" id="confirmOk">确定</button>
         </div>
@@ -778,6 +783,7 @@ function _showConfirm(msg) {
     document.body.appendChild(overlay);
     overlay.querySelector('#confirmOk').onclick = () => { overlay.remove(); resolve(true); };
     overlay.querySelector('#confirmCancel').onclick = () => { overlay.remove(); resolve(false); };
+    overlay.querySelector('#confirmClose').onclick = () => { overlay.remove(); resolve(false); };
     overlay.onclick = (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } };
   });
 }
@@ -1003,13 +1009,18 @@ function _compareVersions(v1, v2) {
 
 function showUpdateDialog(updateInfo) {
   const dialog = document.createElement('div');
-  dialog.className = 'update-dialog';
-  dialog.innerHTML = `<div class="update-dialog-content">
-    <div class="update-dialog-title">发现新版本 v${updateInfo.latest}</div>
-    <div class="update-dialog-body">${updateInfo.release_notes || '暂无更新说明'}</div>
-    <div class="update-dialog-actions">
-      <button class="btn btn-ghost" onclick="this.closest('.update-dialog').remove()">稍后</button>
-      <button class="btn btn-primary" onclick="downloadUpdate('${updateInfo.download_url || ''}', this.closest('.update-dialog-content'))">下载更新</button>
+  dialog.className = 'modal-overlay';
+  dialog.innerHTML = `<div class="modal-card" style="max-width:420px">
+    <div class="modal-header">
+      <span>发现新版本 v${updateInfo.latest}</span>
+      <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+    </div>
+    <div class="modal-body" style="max-height:160px;overflow-y:auto;font-size:13px;color:var(--text2);line-height:1.6">
+      ${updateInfo.release_notes || '暂无更新说明'}
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="this.closest('.modal-overlay').remove()">稍后</button>
+      <button class="btn btn-primary" onclick="downloadUpdate('${updateInfo.download_url || ''}', this.closest('.modal-card'))">下载更新</button>
     </div>
   </div>`;
   document.body.appendChild(dialog);
@@ -1047,13 +1058,18 @@ function downloadUpdate(url, contentEl) {
 
   // 把对话框内容替换为进度条
   contentEl.innerHTML = `
-    <div class="update-dialog-title">正在下载更新</div>
-    <div class="update-progress">
-      <div class="update-progress-bar"><div class="update-progress-fill" id="updateProgressFill"></div></div>
-      <div class="update-progress-text" id="updateProgressText">0%</div>
+    <div class="modal-header">
+      <span>正在下载更新</span>
+      <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
     </div>
-    <div class="update-status-text" id="updateStatusText">准备下载...</div>
-    <div class="update-dialog-actions">
+    <div class="modal-body" style="text-align:center">
+      <div class="update-progress" style="margin:20px 0">
+        <div class="update-progress-bar"><div class="update-progress-fill" id="updateProgressFill"></div></div>
+        <div class="update-progress-text" id="updateProgressText">0%</div>
+      </div>
+      <div class="update-status-text" id="updateStatusText" style="font-size:13px;color:var(--text2)">准备下载...</div>
+    </div>
+    <div class="modal-footer">
       <button class="btn btn-ghost" id="updateCancelBtn" style="display:none">取消</button>
     </div>
   `;
@@ -1061,7 +1077,7 @@ function downloadUpdate(url, contentEl) {
   const fill = document.getElementById('updateProgressFill');
   const text = document.getElementById('updateProgressText');
   const status = document.getElementById('updateStatusText');
-  const dialogEl = contentEl.closest('.update-dialog');
+  const dialogEl = contentEl.closest('.modal-overlay');
   let downloadedPath = null;
 
   window.electronAPI.onDownloadProgress((data) => {
@@ -1080,8 +1096,8 @@ function downloadUpdate(url, contentEl) {
       text.textContent = '100%';
       status.textContent = '下载完成';
       // 替换为安装按钮
-      contentEl.querySelector('.update-dialog-actions').innerHTML = `
-        <button class="btn btn-ghost" onclick="this.closest('.update-dialog').remove()">稍后安装</button>
+      contentEl.querySelector('.modal-footer').innerHTML = `
+        <button class="btn btn-ghost" onclick="dialogEl.remove()">稍后安装</button>
         <button class="btn btn-primary" id="updateInstallBtn">立即安装</button>
       `;
       document.getElementById('updateInstallBtn').addEventListener('click', () => {
@@ -1093,9 +1109,9 @@ function downloadUpdate(url, contentEl) {
     } else if (data.status === 'error') {
       fill.style.background = '#ff3b30';
       status.textContent = '下载失败: ' + (data.error || '未知错误');
-      contentEl.querySelector('.update-dialog-actions').innerHTML = `
-        <button class="btn btn-ghost" onclick="this.closest('.update-dialog').remove()">关闭</button>
-        <button class="btn btn-primary" onclick="downloadUpdate('${url}', this.closest('.update-dialog-content'))">重试</button>
+      contentEl.querySelector('.modal-footer').innerHTML = `
+        <button class="btn btn-ghost" onclick="dialogEl.remove()">关闭</button>
+        <button class="btn btn-primary" onclick="downloadUpdate('${url}', dialogEl.querySelector('.modal-card'))">重试</button>
       `;
     }
   });
@@ -2197,19 +2213,19 @@ function aiUseForBroadcast() {
     } else {
       return toast('图片数据无效');
     }
-    _switchToTab(0);
+    _switchToTab(1);
     toast('图片已填入群发中心');
   } else if (liked.type === 'video' && liked.localPath) {
     // 生视频：填入群发中心
     state.imagePath = liked.localPath;
     updateSendInfo();
-    _switchToTab(0);
+    _switchToTab(1);
     toast('视频路径已填入群发中心');
   } else {
     // 生文案：填入文字
     const ta = document.getElementById('copyText');
     if (ta) ta.value = liked.content || '';
-    _switchToTab(0);
+    _switchToTab(1);
     updateSendInfo();
     toast('文案已填入群发中心');
   }
@@ -2227,11 +2243,11 @@ function aiUseForMoment() {
     const path = img.local_path || img.url;
     if (!path) return toast('图片数据无效');
     _addToMomentMedia(path);
-    _switchToTab(1);
+    _switchToTab(2);
     toast('图片已添加到朋友圈');
   } else if (liked.type === 'video' && liked.localPath) {
     _addToMomentMedia(liked.localPath);
-    _switchToTab(1);
+    _switchToTab(2);
     toast('视频已添加到朋友圈');
   } else {
     // 生文案：填入文字
@@ -2239,7 +2255,7 @@ function aiUseForMoment() {
     if (ta) ta.value = liked.content || '';
     const cc = document.getElementById('momentCharCount');
     if (cc) cc.textContent = (liked.content || '').length;
-    _switchToTab(1);
+    _switchToTab(2);
     toast('文案已填入朋友圈');
   }
 }
@@ -2493,7 +2509,8 @@ async function dbSave() {
 }
 
 async function dbDelete(id) {
-  if (!confirm('确定删除？')) return;
+  var ok = await _showConfirm('确定删除此资源？');
+  if (!ok) return;
   try { await window.electronAPI.dbDelete(id); dbLoad(); toast('已删除'); } catch(e) {}
 }
 
@@ -2594,7 +2611,7 @@ function dbPickerFill() {
     });
     var ta = document.getElementById('momentText'); if (ta) { var cc = document.getElementById('momentCharCount'); if (cc) cc.textContent = (ta.value||'').length; }
     if (typeof renderMomentMediaGrid === 'function') renderMomentMediaGrid();
-    _switchToTab(1); dbHidePicker(); toast('已填入朋友圈');
+    _switchToTab(2); dbHidePicker(); toast('已填入朋友圈');
     return;
   }
 
@@ -2603,10 +2620,10 @@ function dbPickerFill() {
   if (dbState.pickerTarget === 'broadcast') {
     if (item.type === 'text') {
       var ta = document.getElementById('copyText'); if (ta) ta.value = item.content;
-      _switchToTab(0); toast('文案已填入群发中心');
+      _switchToTab(1); toast('文案已填入群发中心');
     } else if (item.type === 'image') {
       state.imagePath = item.filePath;
-      _switchToTab(0);
+      _switchToTab(1);
       setTimeout(function() {
         showImagePreview(item.filePath, 'imagePreview', 'uploadIcon', 'uploadText');
         updateSendInfo();
@@ -2615,20 +2632,20 @@ function dbPickerFill() {
     } else if (item.type === 'video') {
       state.imagePath = item.filePath;
       updateSendInfo();
-      _switchToTab(0); toast('视频已填入群发中心');
+      _switchToTab(1); toast('视频已填入群发中心');
     }
   } else if (dbState.pickerTarget === 'moment') {
     if (item.type === 'text') {
       var ta2 = document.getElementById('momentText');
       if (ta2) { ta2.value = item.content; var cc = document.getElementById('momentCharCount'); if (cc) cc.textContent = item.content.length; }
-      _switchToTab(1); toast('文案已填入朋友圈');
+      _switchToTab(2); toast('文案已填入朋友圈');
     } else {
       if (typeof momentState !== 'undefined' && momentState) {
         if (!momentState.mediaPaths) momentState.mediaPaths = [];
         if (momentState.mediaPaths.length >= 9) { toast('最多9张/段媒体'); return; }
         momentState.mediaPaths.push(item.filePath);
         if (typeof renderMomentMediaGrid === 'function') renderMomentMediaGrid();
-        _switchToTab(1); toast('媒体已填入朋友圈');
+        _switchToTab(2); toast('媒体已填入朋友圈');
       }
     }
   }
@@ -2790,10 +2807,10 @@ function dbPickerAIModeFill() {
         if (!momentState.mediaPaths) momentState.mediaPaths = [];
         momentState.mediaPaths.push(last._img);
         if (typeof renderMomentMediaGrid === 'function') renderMomentMediaGrid();
-        _switchToTab(1); toast('图片已填入朋友圈');
+        _switchToTab(2); toast('图片已填入朋友圈');
       }
     } else {
-      _switchToTab(0);
+      _switchToTab(1);
       setTimeout(function() { showImagePreview('file://' + last._img, 'imagePreview', 'uploadIcon', 'uploadText'); }, 200);
       toast('图片已填入群发中心');
     }
@@ -2807,10 +2824,10 @@ function dbPickerAIModeFill() {
   if (dbState.pickerTarget === 'moment') {
     var ta = document.getElementById('momentText');
     if (ta) { ta.value = content; var cc = document.getElementById('momentCharCount'); if (cc) cc.textContent = content.length; }
-    _switchToTab(1);
+    _switchToTab(2);
   } else {
     var ta2 = document.getElementById('copyText'); if (ta2) ta2.value = content;
-    _switchToTab(0);
+    _switchToTab(1);
   }
   toast('内容已填入');
   dbHidePicker();
@@ -2844,8 +2861,8 @@ function dbPickerMainFill() {
 var orig = window.openTab;
   window.openTab = function(idx) {
     if (orig) orig.call(window, idx);
-    if (idx === 3) setTimeout(dbLoad, 200);
-    if (idx === 4) setTimeout(function() { if (typeof loadAIConfigs === "function") loadAIConfigs(); }, 300);
+    if (idx === 4) setTimeout(dbLoad, 200);
+    if (idx === 5) setTimeout(function() { if (typeof loadAIConfigs === "function") loadAIConfigs(); }, 300);
   };
 })();
 setTimeout(dbLoad, 500);
@@ -2988,4 +3005,480 @@ async function testAiVideoConnection() {
   } catch (e) {
     badge.textContent = '连接失败'; badge.className = 'api-badge';
   }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 多平台分发（Tab 0）— 多账号管理 + 发布
+// ═══════════════════════════════════════════════════════════
+
+let platformState = {
+  douyin: { accounts: [], },         // [{ name, valid }]
+  shipinhao: { accounts: [], },      // [{ name, valid }]
+  activePlatform: 'douyin',          // 'douyin' | 'shipinhao'
+};
+
+async function platformInit() {
+  try {
+    if (window.electronAPI && window.electronAPI.platformInit) {
+      await window.electronAPI.platformInit();
+    }
+  } catch (e) {
+    console.warn('[Platform] init error:', e.message);
+  }
+  // 监听日志（来自后端的发布进度等）
+  if (window.electronAPI && window.electronAPI.onPlatformLog) {
+    window.electronAPI.onPlatformLog((data) => {
+      platformLog(data.message);
+    });
+  }
+  try {
+    if (window.electronAPI && window.electronAPI.platformGetBrowser) {
+      const browserInfo = await window.electronAPI.platformGetBrowser();
+      if (browserInfo) platformLog(`🌐 检测到浏览器: ${browserInfo.label}`);
+    }
+  } catch (e) {}
+  // 定时器范围
+  const scheduleInput = document.getElementById('platformScheduleTime');
+  if (scheduleInput) _platformApplyScheduleRange(scheduleInput);
+  // 启动时快速扫描 Cookie 文件（不开浏览器），瞬间出列表
+  await platformQuickScanAccounts();
+}
+
+function platformLog(msg) {
+  const el = document.getElementById('platformLogContent');
+  if (!el) return;
+  const time = new Date().toLocaleTimeString();
+  el.innerHTML += `<div>[${time}] ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── 账号管理 ──────────────────────────────────────────
+
+/** 启动时快速扫描两个平台：只读文件，不开浏览器 */
+async function platformQuickScanAccounts() {
+  await _scanPlatform('douyin', 'platformListAccounts', 'platformCheckDouyinQuick');
+  await _scanPlatform('shipinhao', 'platformListShipinhaoAccounts', 'platformCheckShipinhaoQuick');
+  platformRenderAccounts();
+  platformRenderTargetAccounts();
+  _updatePlatformStatus();
+}
+
+/** 扫描指定平台的账号 */
+async function _scanPlatform(platform, listIpc, checkIpc) {
+  const ipc = window.electronAPI;
+  if (!ipc || !ipc[listIpc]) return;
+  try {
+    const result = await ipc[listIpc]();
+    const names = result.accounts || [];
+    const accounts = [];
+    for (const name of names) {
+      try {
+        const check = await ipc[checkIpc]({ accountName: name });
+        accounts.push({ name, valid: check.valid });
+      } catch { accounts.push({ name, valid: false }); }
+    }
+    platformState[platform].accounts = accounts;
+  } catch (e) {
+    platformLog(`⚠️ 扫描${platform === 'douyin' ? '抖音' : '视频号'}账号失败: ${e.message}`);
+  }
+}
+
+/** 全局刷新状态：快速扫描 Cookie 文件（不弹浏览器） */
+async function platformRefreshStatus() {
+  const plat = platformState.activePlatform;
+  const label = plat === 'douyin' ? '抖音' : '视频号';
+  platformLog(`🔄 开始刷新${label}账号登录状态...`);
+  const listIpc = plat === 'douyin' ? 'platformListAccounts' : 'platformListShipinhaoAccounts';
+  const checkIpc = plat === 'douyin' ? 'platformCheckDouyinQuick' : 'platformCheckShipinhaoQuick';
+  const ipc = window.electronAPI;
+  if (!ipc || !ipc[listIpc]) return;
+  try {
+    const result = await ipc[listIpc]();
+    const names = result.accounts || [];
+    const accounts = [];
+    for (const name of names) {
+      try {
+        const check = await ipc[checkIpc]({ accountName: name });
+        accounts.push({ name, valid: check.valid });
+      } catch (e) {
+        platformLog(`⚠️ 检查「${name}」登录状态失败: ${e.message}`);
+        accounts.push({ name, valid: false });
+      }
+    }
+    platformState[plat].accounts = accounts;
+    platformRenderAccounts();
+    platformRenderTargetAccounts();
+    _updatePlatformStatus();
+    platformLog(`✅ ${label}账号刷新完成`);
+  } catch (e) {
+    platformLog(`❌ 刷新${label}账号失败: ` + e.message);
+  }
+}
+
+function platformRenderAccounts() {
+  const list = document.getElementById('platformAccountList');
+  if (!list) return;
+  const plat = platformState.activePlatform;
+  const accounts = platformState[plat].accounts;
+  if (accounts.length === 0) {
+    list.innerHTML = `<div style="font-size:13px;color:var(--text3);padding:8px 0">暂无${plat === 'douyin' ? '抖音' : '视频号'}账号</div>`;
+    return;
+  }
+  list.innerHTML = accounts.map(a => {
+    const sc = a.valid ? 'green' : 'gray';
+    const st = a.valid ? '已登录' : '未登录';
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
+      <span style="flex:1;font-size:13px;font-weight:500">${a.name}</span>
+      <span class="status-dot ${sc}" style="width:8px;height:8px"></span>
+      <span style="font-size:12px;color:var(--text2);min-width:48px">${st}</span>
+      <button class="btn btn-ghost btn-xs" onclick="platformClearAccount('${a.name}')" style="font-size:11px;color:var(--danger)">删除</button>
+    </div>`;
+  }).join('');
+}
+
+function platformRenderTargetAccounts() {
+  const container = document.getElementById('platformTargetAccounts');
+  if (!container) return;
+
+  const groups = [
+    { key: 'douyin', label: '🎵 抖音', accounts: platformState.douyin.accounts.filter(a => a.valid) },
+    { key: 'shipinhao', label: '📺 视频号', accounts: platformState.shipinhao.accounts.filter(a => a.valid) },
+  ];
+
+  let html = '';
+  for (const g of groups) {
+    if (g.accounts.length === 0) {
+      html += `<div class="platform-target-group">
+        <div class="platform-target-group-label">${g.label}</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px">暂无已登录账号</div>
+      </div>`;
+    } else {
+      html += `<div class="platform-target-group">
+        <div class="platform-target-group-label">${g.label}</div>
+        <div class="platform-target-group-accounts">
+          ${g.accounts.map(a =>
+            `<label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px">
+              <input type="checkbox" class="platform-target-account" data-platform="${g.key}" value="${a.name}" checked> ${a.name}
+            </label>`
+          ).join('')}
+        </div>
+      </div>`;
+    }
+  }
+  container.innerHTML = html;
+}
+
+async function platformAddNewAccount() {
+  const plat = platformState.activePlatform;
+  const label = plat === 'douyin' ? '抖音' : '视频号';
+  const name = await _showPrompt(`添加并登录${label}账号`, '输入别名，如: 主号、运营号1');
+  if (!name || !name.trim()) return;
+  const alias = name.trim();
+  if (!/^[a-zA-Z0-9_\u4e00-\u9fa5-]+$/.test(alias)) {
+    platformLog('❌ 别名只能包含字母、数字、中文、下划线、横线');
+    return;
+  }
+  // 统一走 platformLogin，douyin 和 shipinhao 都用真实的登录流程
+  await platformLogin(alias, plat);
+}
+
+async function platformLogin(accountName, platform) {
+  if (!accountName || !platform) return;
+  const label = platform === 'douyin' ? '抖音' : '视频号';
+  const ipcFunc = platform === 'douyin' ? 'platformLoginDouyin' : 'platformLoginShipinhao';
+  platformLog(`🔑 正在唤起浏览器进行${label}「${accountName}」的扫码登录...`);
+  try {
+    const result = await window.electronAPI[ipcFunc]({ accountName });
+    if (!result) {
+      platformLog(`❌ 「${accountName}」登录无响应（IPC 返回空）`);
+    } else if (result.success) {
+      platformLog(`✅ 「${accountName}」${label}扫码登录成功`);
+    } else {
+      platformLog(`❌ 「${accountName}」登录失败: ${result.message || '未知错误（请检查浏览器是否正常弹出）'}`);
+    }
+    await platformQuickScanAccounts();
+  } catch (e) {
+    platformLog(`❌ 「${accountName}」登录异常: ${e.message}`);
+  }
+}
+
+/** 删除当前平台的某个账号 */
+async function platformClearAccount(accountName) {
+  if (!accountName) return;
+  const plat = platformState.activePlatform;
+  const ok = await _showConfirm(`确定删除「${accountName}」？删除后需要重新登录才能使用。`);
+  if (!ok) return;
+  try {
+    // 直接删 Cookie 文件，不触发浏览器校验
+    if (window.electronAPI && window.electronAPI.platformLogout) {
+      await window.electronAPI.platformLogout({ accountName });
+    }
+    // 直接从内存状态移除
+    platformState[plat].accounts = platformState[plat].accounts.filter(a => a.name !== accountName);
+    platformRenderAccounts();
+    platformRenderTargetAccounts();
+    _updatePlatformStatus();
+    platformLog(`🗑️ 已删除「${accountName}」`);
+  } catch (e) {
+    platformLog('❌ 删除失败: ' + e.message);
+  }
+}
+
+function _updatePlatformStatus() {
+  const plat = platformState.activePlatform;
+  const accounts = platformState[plat].accounts;
+  const anyValid = accounts.some(a => a.valid);
+  const dot = document.getElementById('platformStatusDot');
+  const text = document.getElementById('platformStatusText');
+  if (dot) dot.className = 'status-dot ' + (anyValid ? 'green' : 'gray');
+  if (text) {
+    if (accounts.length === 0) text.textContent = '暂无账号';
+    else if (anyValid) text.textContent = accounts.filter(a => a.valid).length + '/' + accounts.length + ' 已登录';
+    else text.textContent = accounts.length + ' 个账号未登录';
+  }
+}
+
+/** 切换账号管理 Tab */
+function platformSwitchTab(platform) {
+  if (platform === platformState.activePlatform) return;
+  platformState.activePlatform = platform;
+  document.querySelectorAll('.platform-tab').forEach(el => {
+    el.classList.toggle('platform-tab-active', el.dataset.platform === platform);
+  });
+  // 显示/隐藏平台限制提示
+  const hints = document.getElementById('platformHints');
+  if (hints) hints.style.display = (platform === 'shipinhao') ? 'block' : 'none';
+  platformRenderAccounts();
+  _updatePlatformStatus();
+}
+
+// ── 发布 ──────────────────────────────────────────────
+
+function platformSelectVideo() {
+  if (!window.electronAPI || !window.electronAPI.selectFile) return;
+  window.electronAPI.selectFile('video').then(async (path) => {
+    if (path) {
+      document.getElementById('platformVideoText').textContent = '✅ 已选择视频文件';
+      document.getElementById('platformVideoPath').textContent = path;
+      document.getElementById('platformVideoPath').classList.remove('hidden');
+      document.getElementById('platformVideoPath').dataset.path = path;
+      if (window.electronAPI.platformCheckFile) {
+        const info = await window.electronAPI.platformCheckFile({ filePath: path, type: 'video' });
+        if (info && info.valid) {
+          const sizeText = info.sizeMB > 1000 ? `${(info.sizeMB/1024).toFixed(1)}GB` : `${info.sizeMB}MB`;
+          platformLog(`📁 视频: ${sizeText}${info.sizeMB > 4000 ? ' ❌ 超过4GB限制' : ' ✅'}`);
+        }
+      }
+    }
+  });
+}
+
+function platformSelectThumbnail() {
+  if (!window.electronAPI || !window.electronAPI.selectFile) return;
+  window.electronAPI.selectFile('image').then(async (path) => {
+    if (path) {
+      document.getElementById('platformThumbnail').value = path;
+      if (window.electronAPI.platformCheckFile) {
+        const info = await window.electronAPI.platformCheckFile({ filePath: path, type: 'image' });
+        if (info && info.valid && info.dimensions && info.dimensions !== 'unknown') {
+          const parts = info.dimensions.split('×');
+          const w = parseInt(parts[0]), h = parseInt(parts[1]);
+          if (w < 720 || h < 1280) {
+            platformLog(`⚠️ 封面分辨率${info.dimensions}，抖音推荐≥720×1280，过低可能失败`);
+          } else {
+            platformLog(`✅ 封面分辨率: ${info.dimensions}`);
+          }
+        }
+      }
+    }
+  });
+}
+
+async function platformPublish() {
+  const publishBtn = document.getElementById('platformPublishBtn');
+  const cancelBtn = document.getElementById('platformCancelBtn');
+  if (!publishBtn) return;
+
+  // 收集目标账号（按平台分组）
+  const checked = document.querySelectorAll('.platform-target-account:checked');
+  if (checked.length === 0) { platformLog('❌ 请选择至少一个发布目标账号'); return; }
+
+  const targets = { douyin: [], shipinhao: [] };
+  checked.forEach(cb => {
+    const plat = cb.dataset.platform || 'douyin';
+    targets[plat].push(cb.value);
+  });
+
+  // 收集参数
+  const title = document.getElementById('platformTitle')?.value?.trim();
+  if (!title) { platformLog('❌ 请填写视频标题'); return; }
+
+  const videoPathEl = document.getElementById('platformVideoPath');
+  const filePath = videoPathEl?.dataset?.path;
+  if (!filePath) { platformLog('❌ 请选择视频文件'); return; }
+
+  const desc = document.getElementById('platformDesc')?.value?.trim() || '';
+  const tagsStr = document.getElementById('platformTags')?.value?.trim() || '';
+  const tags = tagsStr ? tagsStr.split(/[,，]/).map(t => t.trim()).filter(Boolean) : [];
+  const thumbnailPath = document.getElementById('platformThumbnail')?.value?.trim() || '';
+  const publishMode = document.querySelector('input[name="publishMode"]:checked')?.value || 'immediate';
+  const scheduleInput = document.getElementById('platformScheduleTime')?.value;
+  const publishDate = (publishMode === 'scheduled' && scheduleInput) ? new Date(scheduleInput).getTime() : 0;
+
+  if (publishMode === 'scheduled' && !scheduleInput) { platformLog('❌ 请选择定时发布时间'); return; }
+  if (publishMode === 'scheduled' && publishDate <= Date.now()) { platformLog('❌ 定时发布时间必须晚于当前时间'); return; }
+
+  // 前端预校验
+  const errors = [];
+  if (!title) errors.push('标题不能为空');
+  if (title.length > 30) errors.push(`标题最多30字（当前${title.length}字）`);
+  if (desc.length > 1000) errors.push(`描述最多1000字（当前${desc.length}字）`);
+  if (tags.length > 10) errors.push(`话题标签最多10个（当前${tags.length}个）`);
+  for (const t of tags) { if (t.length > 20) { errors.push(`话题"${t}"超过20字`); break; } }
+  if (errors.length > 0) { platformLog('❌ ' + errors.join('；')); return; }
+
+  // 发布中
+  publishBtn.disabled = true;
+  publishBtn.textContent = '发布中...';
+  if (cancelBtn) cancelBtn.classList.remove('hidden');
+  document.getElementById('platformLogContent').innerHTML = '';
+  const totalTargets = targets.douyin.length + targets.shipinhao.length;
+  platformLog(`🚀 开始发布到 ${totalTargets} 个账号（抖音 ${targets.douyin.length}、视频号 ${targets.shipinhao.length}）`);
+
+  let successCount = 0, failCount = 0;
+
+  // 先发抖音
+  for (const acct of targets.douyin) {
+    platformLog(`📤 正在发布到抖音「${acct}」...`);
+    try {
+      const result = await window.electronAPI.platformPublishDouyin({
+        accountName: acct, title, filePath, desc, tags, thumbnailPath, publishDate,
+      });
+      if (result.success) {
+        platformLog(`✅ 抖音「${acct}」发布成功`);
+        successCount++;
+      } else {
+        platformLog(`❌ 抖音「${acct}」发布失败: ${result.error || '未知错误'}`);
+        failCount++;
+      }
+    } catch (e) {
+      platformLog(`❌ 抖音「${acct}」发布异常: ${e.message}`);
+      failCount++;
+    }
+  }
+
+  // 再发视频号
+  for (const acct of targets.shipinhao) {
+    platformLog(`📤 正在发布到视频号「${acct}」...`);
+    try {
+      const result = await window.electronAPI.platformPublishShipinhao({
+        accountName: acct, title, filePath, desc, tags, thumbnailPath, publishDate,
+      });
+      if (result.success) {
+        platformLog(`✅ 视频号「${acct}」发布成功`);
+        successCount++;
+      } else {
+        platformLog(`❌ 视频号「${acct}」发布失败: ${result.error || '即将上线'}`);
+        failCount++;
+      }
+    } catch (e) {
+      platformLog(`❌ 视频号「${acct}」发布异常: ${e.message}`);
+      failCount++;
+    }
+  }
+
+  platformLog(`📊 完成: ${successCount} 成功, ${failCount} 失败`);
+  publishBtn.disabled = false;
+  publishBtn.textContent = '🚀 多平台发布';
+  if (cancelBtn) cancelBtn.classList.add('hidden');
+}
+
+async function platformCancelPublish() {
+  try {
+    await window.electronAPI.platformCancelPublish();
+    platformLog('⏹️ 已取消当前发布');
+  } catch (e) {
+    platformLog('⚠️ 取消失败: ' + e.message);
+  }
+}
+
+// ── 定时 ──
+
+function platformToggleSchedule() {
+  const mode = document.querySelector('input[name="publishMode"]:checked')?.value;
+  const wrap = document.getElementById('platformScheduleWrap');
+  const input = document.getElementById('platformScheduleTime');
+  if (!wrap || !input) return;
+  if (mode === 'scheduled') {
+    wrap.classList.remove('hidden');
+    _platformApplyScheduleRange(input);
+  } else {
+    wrap.classList.add('hidden');
+    input.value = '';
+  }
+}
+
+function _platformApplyScheduleRange(input) {
+  const now = new Date();
+  const min = new Date(now.getTime() + 2 * 60 * 60 * 1000 + 60000);
+  const max = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+  input.min = _formatLocalDatetime(min);
+  input.max = _formatLocalDatetime(max);
+  if (!input.value || new Date(input.value).getTime() < min.getTime()) {
+    input.value = _formatLocalDatetime(min);
+  }
+}
+
+function _formatLocalDatetime(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${day}T${h}:${min}`;
+}
+
+// ── 简易输入弹窗（替代 Electron 禁用的 prompt()）─
+function _showPrompt(title, placeholder) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.45);backdrop-filter:blur(8px)';
+    overlay.innerHTML = `<div style="background:var(--surface);border-radius:16px;padding:24px;width:360px;box-shadow:0 8px 40px rgba(0,0,0,0.2)">
+      <div style="font-size:15px;font-weight:600;margin-bottom:12px;color:var(--text1)">${title}</div>
+      <input id="_promptInput" class="input" placeholder="${placeholder}" style="width:100%;box-sizing:border-box;font-size:14px" autofocus>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-ghost" id="_promptCancel">取消</button>
+        <button class="btn btn-primary" id="_promptConfirm">确定</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('#_promptInput');
+    input.focus();
+    const cleanup = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+    overlay.querySelector('#_promptCancel').onclick = () => { cleanup(); resolve(null); };
+    overlay.querySelector('#_promptConfirm').onclick = () => { cleanup(); resolve(input.value); };
+    input.onkeydown = (e) => { if (e.key === 'Enter') { cleanup(); resolve(input.value); } };
+    overlay.onclick = (e) => { if (e.target === overlay) { cleanup(); resolve(null); } };
+  });
+}
+
+function platformUpdateTitleCount() {
+  const el = document.getElementById('platformTitle');
+  const count = document.getElementById('platformTitleCount');
+  if (el && count) {
+    const len = el.value.length;
+    count.textContent = len + '/30';
+    count.style.color = len >= 25 ? 'var(--danger)' : 'var(--text3)';
+  }
+}
+
+function platformUpdateDescCount() {
+  const el = document.getElementById('platformDesc');
+  const count = document.getElementById('platformDescCount');
+  if (!el || !count) return;
+  let text = el.value;
+  if (text.length > 1000) { el.value = text.slice(0, 1000); text = el.value; }
+  count.textContent = text.length + '字';
+  count.style.color = text.length >= 950 ? 'var(--danger)' : 'var(--text3)';
 }

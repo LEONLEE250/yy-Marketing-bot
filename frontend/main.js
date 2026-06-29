@@ -8,6 +8,8 @@ const https = require('https');
 const fs = require('fs');
 const os = require('os');
 const aiService = require(path.join(__dirname, 'ai-service.js'));
+const DouyinUploader = require(path.join(__dirname, 'platform', 'douyin-uploader.js'));
+const { checkDouyinCookie } = require(path.join(__dirname, 'platform', 'cookie-manager.js'));
 
 // ── 单实例锁（防止双开）──
 const gotLock = app.requestSingleInstanceLock();
@@ -36,7 +38,7 @@ process.on('uncaughtException', (err) => {
 // ── Preview 常量 ──────────────────────────────────────────
 const BACKEND_PORT = 5680;
 const EXPECTED_CHANNEL = 'preview';
-const EXPECTED_VERSION = '3.5.0';
+const EXPECTED_VERSION = '4.0.0';
 
 let mainWindow;
 let backendProcess;
@@ -997,6 +999,245 @@ function createWindow() {
     setTimeout(() => app.quit(), 500);
     return { success: true };
   });
+  // ── 多平台分发 IPC ──
+  const platformCookieDir = path.join(process.env.APPDATA || os.homedir(), 'yizhun-wechat-bot-preview', 'platform-cookies');
+
+  // 初始化目录
+  ipcMain.handle('platform:init', async () => {
+    try { fs.mkdirSync(platformCookieDir, { recursive: true }); } catch (_) {}
+    return { cookieDir: platformCookieDir };
+  });
+
+  // 检查抖音 Cookie 状态（完整校验：开浏览器验证）
+  ipcMain.handle('platform:check-douyin', async (event, { accountName }) => {
+    const acct = accountName || 'default';
+    const cookiePath = path.join(platformCookieDir, `${acct}.json`);
+    const valid = await checkDouyinCookie(cookiePath);
+    return { valid, accountName: acct };
+  });
+
+  // 快速检查 Cookie 状态（只读文件，不开浏览器 — 启动时用）
+  ipcMain.handle('platform:check-douyin-quick', async (event, { accountName }) => {
+    const acct = accountName || 'default';
+    const cookiePath = path.join(platformCookieDir, `${acct}.json`);
+    if (!fs.existsSync(cookiePath)) return { valid: false, accountName: acct };
+    try {
+      const raw = JSON.parse(fs.readFileSync(cookiePath, 'utf-8'));
+      const now = Date.now() / 1000;
+      // 检查 sessionid/passport 且未过期
+      const hasSession = raw.cookies && raw.cookies.some(c =>
+        c.name && (c.name.includes('sessionid') || c.name.includes('passport')) &&
+        (!c.expires || c.expires === -1 || c.expires > now)
+      );
+      return { valid: hasSession, accountName: acct };
+    } catch { return { valid: false, accountName: acct }; }
+  });
+
+  // 列出所有账号
+  ipcMain.handle('platform:list-accounts', async () => {
+    try {
+      if (!fs.existsSync(platformCookieDir)) return { accounts: [] };
+      const files = fs.readdirSync(platformCookieDir).filter(f => f.endsWith('.json'));
+      const accounts = files.map(f => f.replace('.json', ''));
+      return { accounts };
+    } catch { return { accounts: [] }; }
+  });
+
+  // 添加账号（创建空 cookie 占位）
+  ipcMain.handle('platform:add-account', async (event, { accountName }) => {
+    if (!accountName || !/^[a-zA-Z0-9_\u4e00-\u9fa5-]+$/.test(accountName)) {
+      return { success: false, error: '账号名只能包含字母、数字、中文、下划线、横线' };
+    }
+    try {
+      if (!fs.existsSync(platformCookieDir)) fs.mkdirSync(platformCookieDir, { recursive: true });
+      const cookiePath = path.join(platformCookieDir, `${accountName}.json`);
+      if (fs.existsSync(cookiePath)) return { success: false, error: '账号已存在' };
+      fs.writeFileSync(cookiePath, '{"cookies":[],"origins":[]}', 'utf-8');
+      return { success: true };
+    } catch (e) { return { success: false, error: e.message }; }
+  });
+
+  // 抖音扫码登录
+  ipcMain.handle('platform:login-douyin', async (event, { accountName }) => {
+    const acct = accountName || 'default';
+    const cookiePath = path.join(platformCookieDir, `${acct}.json`);
+    console.log(`[Platform] login-douyin called for ${acct}, cookiePath=${cookiePath}`);
+    try {
+      const { loginDouyin } = require(path.join(__dirname, 'platform', 'cookie-manager.js'));
+      const result = await loginDouyin(cookiePath, platformCookieDir, acct, (qrcodeDataURL) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('platform:qrcode', { dataURL: qrcodeDataURL });
+        }
+      });
+      console.log(`[Platform] login-douyin result for ${acct}:`, JSON.stringify(result));
+      return result;
+    } catch (e) {
+      console.error(`[Platform] login-douyin error for ${acct}:`, e.message, e.stack);
+      return { success: false, message: `后端错误: ${e.message}` };
+    }
+  });
+
+  // 抖音视频发布
+  let currentPublishCancel = false;
+
+  ipcMain.handle('platform:publish-douyin', async (event, params) => {
+    currentPublishCancel = false;
+    const cookiePath = path.join(platformCookieDir, `${params.accountName || 'default'}.json`);
+
+    const uploader = new DouyinUploader({
+      accountName: params.accountName || 'default',
+      cookieDir: platformCookieDir,
+      title: params.title,
+      filePath: params.filePath,
+      tags: params.tags || [],
+      desc: params.desc || '',
+      publishDate: params.publishDate || 0,
+      thumbnailPath: params.thumbnailPath || '',
+      onLog: (msg) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('platform:log', { message: msg });
+        }
+      },
+    });
+
+    let success = false;
+    try {
+      await uploader.upload();
+      success = true;
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+    return { success: true };
+  });
+
+  // ── 视频号 IPC ──
+
+  ipcMain.handle('platform:list-shipinhao-accounts', async () => {
+    try {
+      const dir = path.join(platformCookieDir, 'shipinhao');
+      if (!fs.existsSync(dir)) return { accounts: [] };
+      const files = fs.readdirSync(dir).filter(f => f.endsWith('.json'));
+      return { accounts: files.map(f => f.replace('.json', '')) };
+    } catch { return { accounts: [] }; }
+  });
+
+  ipcMain.handle('platform:check-shipinhao-quick', async (event, { accountName }) => {
+    const acct = accountName || 'default';
+    const cookiePath = path.join(platformCookieDir, 'shipinhao', `${acct}.json`);
+    if (!fs.existsSync(cookiePath)) return { valid: false, accountName: acct };
+    try {
+      const raw = JSON.parse(fs.readFileSync(cookiePath, 'utf-8'));
+      // 双重校验：1. 微信专属 Cookie 名称 2. 来自微信域的 Cookie 数量
+      const wechatKeys = ['wxuin', 'wxsid', 'wxssid', 'data_bizuin', 'mm_lang', 'uin', 'sid', 'pass_ticket'];
+      const byName = raw.cookies && raw.cookies.filter(c => c.name && wechatKeys.some(k => c.name.includes(k)));
+      const byDomain = raw.cookies && raw.cookies.filter(c => c.domain && (c.domain.includes('weixin') || c.domain.includes('wechat') || c.domain.includes('channels')));
+      const hasSession = (byName && byName.length >= 1) || (byDomain && byDomain.length >= 3);
+      return { valid: hasSession, accountName: acct };
+    } catch { return { valid: false, accountName: acct }; }
+  });
+
+  ipcMain.handle('platform:check-shipinhao', async (event, { accountName }) => {
+    const acct = accountName || 'default';
+    const cookiePath = path.join(platformCookieDir, 'shipinhao', `${acct}.json`);
+    if (!fs.existsSync(cookiePath)) return { valid: false, accountName: acct };
+    try {
+      const raw = JSON.parse(fs.readFileSync(cookiePath, 'utf-8'));
+      const wechatKeys = ['wxuin', 'wxsid', 'wxssid', 'data_bizuin', 'mm_lang', 'uin', 'sid', 'pass_ticket'];
+      const byName = raw.cookies && raw.cookies.filter(c => c.name && wechatKeys.some(k => c.name.includes(k)));
+      const byDomain = raw.cookies && raw.cookies.filter(c => c.domain && (c.domain.includes('weixin') || c.domain.includes('wechat') || c.domain.includes('channels')));
+      const hasSession = (byName && byName.length >= 1) || (byDomain && byDomain.length >= 3);
+      return { valid: hasSession, accountName: acct };
+    } catch { return { valid: false, accountName: acct }; }
+  });
+
+  ipcMain.handle('platform:login-shipinhao', async (event, { accountName }) => {
+    const acct = accountName || 'default';
+    const cookiePath = path.join(platformCookieDir, 'shipinhao', `${acct}.json`);
+    try {
+      const cookieDir2 = path.join(platformCookieDir, 'shipinhao');
+      if (!fs.existsSync(cookieDir2)) fs.mkdirSync(cookieDir2, { recursive: true });
+      const { loginShipinhao } = require(path.join(__dirname, 'platform', 'shipinhao-uploader.js'));
+      const result = await loginShipinhao(cookiePath, cookieDir2, acct, null);
+      return result;
+    } catch (e) {
+      return { success: false, message: `登录失败: ${e.message}` };
+    }
+  });
+
+  ipcMain.handle('platform:publish-shipinhao', async (event, params) => {
+    currentPublishCancel = false;
+    const { ShipinhaoUploader } = require(path.join(__dirname, 'platform', 'shipinhao-uploader.js'));
+    const cookieDir = path.join(platformCookieDir, 'shipinhao');
+    if (!fs.existsSync(cookieDir)) fs.mkdirSync(cookieDir, { recursive: true });
+
+    const uploader = new ShipinhaoUploader({
+      accountName: params.accountName || 'default',
+      cookieDir,
+      title: params.title,
+      filePath: params.filePath,
+      tags: params.tags || [],
+      desc: params.desc || '',
+      publishDate: params.publishDate || 0,
+      thumbnailPath: params.thumbnailPath || '',
+      onLog: (msg) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('platform:log', { message: msg });
+        }
+      },
+    });
+
+    try {
+      await uploader.upload();
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  // 取消发布
+  ipcMain.handle('platform:cancel-publish', async () => {
+    currentPublishCancel = true;
+    return { success: true };
+  });
+
+  // 文件信息校验（前端预检用）
+  const { getImageDimensions, getFileSizeMB } = require(path.join(__dirname, 'platform', 'media-validator.js'));
+  ipcMain.handle('platform:check-file', async (event, { filePath, type }) => {
+    try {
+      if (!fs.existsSync(filePath)) return { valid: false, error: '文件不存在' };
+      const sizeMB = getFileSizeMB(filePath);
+      if (type === 'image') {
+        const dim = getImageDimensions(filePath);
+        return { valid: true, sizeMB, dimensions: dim ? `${dim.width}×${dim.height}` : 'unknown', format: dim ? dim.format : 'unknown' };
+      }
+      return { valid: true, sizeMB };
+    } catch (e) {
+      return { valid: false, error: e.message };
+    }
+  });
+
+  // 删除账号 Cookie 文件（账号从列表消失）
+  ipcMain.handle('platform:logout', async (event, { accountName }) => {
+    const acct = accountName || 'default';
+    // 抖音和视频号路径不同，都要尝试删除
+    const douyinPath = path.join(platformCookieDir, `${acct}.json`);
+    const shipinhaoPath = path.join(platformCookieDir, 'shipinhao', `${acct}.json`);
+    try {
+      for (const p of [douyinPath, shipinhaoPath]) {
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+      }
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  // 获取浏览器信息
+  const { detectBrowserChannel } = require(path.join(__dirname, 'platform', 'base-uploader.js'));
+  ipcMain.handle('platform:get-browser', async () => {
+    const channel = detectBrowserChannel();
+    return { channel, label: channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome' };
+  });
 }
 
 app.whenReady().then(async () => {
@@ -1010,6 +1251,9 @@ app.whenReady().then(async () => {
     if (!fs.existsSync(scriptsFile)) {
       fs.writeFileSync(scriptsFile, '[]', 'utf-8');
     }
+    // 创建平台 Cookie 目录
+    const platformCookieDir = path.join(appDataDir, 'platform-cookies');
+    fs.mkdirSync(platformCookieDir, { recursive: true });
   } catch (_) {}
 
   await killConflictingBackend();
