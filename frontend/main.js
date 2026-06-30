@@ -38,7 +38,7 @@ process.on('uncaughtException', (err) => {
 // ── Preview 常量 ──────────────────────────────────────────
 const BACKEND_PORT = 5680;
 const EXPECTED_CHANNEL = 'preview';
-const EXPECTED_VERSION = '4.0.1';
+const EXPECTED_VERSION = '4.0.2';
 
 let mainWindow;
 let backendProcess;

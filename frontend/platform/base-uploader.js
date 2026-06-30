@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { antiDetectScript } = require('./anti-detect.js');
 
-/** 检测可用浏览器（仅供显示，不再用 channel 启动 — 统一用 patchright 内置 Chromium） */
+/** 检测可用浏览器（仅供前端显示用） */
 function detectBrowserChannel() {
   const edgePaths = [
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -18,65 +18,24 @@ function detectBrowserChannel() {
 }
 
 /**
- * 查找浏览器可执行文件，架构自适应：
- * - 32位系统：Edge 优先（唯一保持更新的 Chromium 浏览器，Chrome 已停更且 CDP 协议不兼容）
- * - 64位系统：Chrome 优先，Edge 兜底
+ * 查找浏览器，架构自适应（对标 social-auto-upload 的 channel 方式）：
+ * - 只用 channel，让 Patchright 通过注册表自行解析浏览器路径 + 版本兼容性校验
+ * - 不再使用 executablePath（32位 Chrome v128 的 CDP 协议不兼容 Patchright 1.61+，
+ *   executablePath 会绕过兼容性检查导致启动失败）
+ * - 32位系统 → Edge（唯一保持更新的 Chromium 浏览器）
+ * - 64位系统 → Chrome 优先，如果 Patchright 找不到 Chrome 会自然回退
  *
- * @returns {{ executablePath: string } | { channel: string }}
+ * @returns {{ channel: string }}
  */
 function findBrowserPath() {
   const is64Bit = process.arch === 'x64' || process.env.PROCESSOR_ARCHITECTURE === 'AMD64' ||
     process.env.PROCESSOR_ARCHITEW6432 === 'AMD64';
 
-  // 32 位系统：Edge 在前（Chrome v128 已停更，CDP 协议不兼容 Patchright 1.61+）
-  // 64 位系统：Chrome 在前
-  const primaryPaths = is64Bit ? [
-    process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-  ] : [
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    process.env.LOCALAPPDATA + '\\Microsoft\\Edge\\Application\\msedge.exe',
-  ];
-
-  for (const p of primaryPaths) {
-    if (fs.existsSync(p)) return { executablePath: p };
-  }
-
-  const secondaryPaths = is64Bit ? [
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    process.env.LOCALAPPDATA + '\\Microsoft\\Edge\\Application\\msedge.exe',
-  ] : [
-    process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-  ];
-
-  for (const p of secondaryPaths) {
-    if (fs.existsSync(p)) return { executablePath: p };
-  }
-
-  // ── 宽搜兜底 ──
-  try {
-    const result = require('child_process').execSync('where chrome 2>nul', { encoding: 'utf8', timeout: 3000 });
-    const lines = result.trim().split('\n').filter(l => l.toLowerCase().includes('chrome'));
-    for (const line of lines) {
-      const exe = line.trim();
-      if (fs.existsSync(exe)) return { executablePath: exe };
-    }
-  } catch (_) {}
-
-  try {
-    const result = require('child_process').execSync('where msedge 2>nul', { encoding: 'utf8', timeout: 3000 });
-    const lines = result.trim().split('\n').filter(l => l.toLowerCase().includes('msedge'));
-    for (const line of lines) {
-      const exe = line.trim();
-      if (fs.existsSync(exe)) return { executablePath: exe };
-    }
-  } catch (_) {}
-
-  // ── 最后回退：channel（patchright 自带检测，但 32 位系统 registry 路径可能不同）──
-  return { channel: is64Bit ? 'chrome' : 'msedge' };
+  // 只用 channel，让 Patchright 通过 Windows 注册表解析（支持 WoW64 重定向）
+  // social-auto-upload 就是只用 channel，不做 executablePath 搜索
+  const channel = is64Bit ? 'chrome' : 'msedge';
+  console.log(`[Browser] arch=${process.arch}, is64Bit=${is64Bit}, channel=${channel}`);
+  return { channel };
 }
 
 class BasePlatformUploader {
@@ -91,7 +50,7 @@ class BasePlatformUploader {
     this.browser = null;
     this.context = null;
     this.page = null;
-    // 优先用精确路径（跨架构：32位/64位通用），回退到 channel
+    // 只用 channel 让 Patchright 通过注册表解析（跨架构兼容）
     this.browserChannel = browserChannel || detectBrowserChannel();
     this._browserPath = findBrowserPath();
   }
@@ -119,12 +78,10 @@ class BasePlatformUploader {
     return p;
   }
 
-  /** 启动浏览器（patchright + system Edge/Chrome + 持久化 Profile） */
+  /** 启动浏览器（patchright + channel 解析 + 持久化 Profile） */
   async launchBrowser({ headless = false } = {}) {
-    const browserName = this._browserPath.channel
-      ? (this._browserPath.channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome')
-      : '系统浏览器';
-    this.log?.(`🌐 使用 ${browserName}（patchright + 持久化 Profile），路径: ${this._browserPath.executablePath || '(channel 检测)'}`);
+    const browserName = this._browserPath.channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome';
+    this.log?.(`🌐 使用 ${browserName}（Patchright channel 解析）`);
 
     if (!fs.existsSync(this.userDataDir)) {
       fs.mkdirSync(this.userDataDir, { recursive: true });

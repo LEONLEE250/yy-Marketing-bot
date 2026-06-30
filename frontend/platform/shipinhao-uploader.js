@@ -5,7 +5,15 @@ const { BasePlatformUploader, findBrowserPath } = require('./base-uploader.js');
 const { chromium } = require('patchright');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { antiDetectScript, randomDelay } = require('./anti-detect.js');
+
+// 架构感知的 User-Agent
+const is64BitArch = process.arch === 'x64' || process.env.PROCESSOR_ARCHITECTURE === 'AMD64' ||
+  process.env.PROCESSOR_ARCHITEW6432 === 'AMD64';
+const ARCH_UA = is64BitArch
+  ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+  : 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 // ── 视频号登录（扫码）──
 // 注意：视频号登录不使用 antiDetectScript（微信风控不同，过度覆盖反而会触发检测）
@@ -31,7 +39,7 @@ async function loginShipinhao(cookiePath, cookieDir, accountName, onQRCode) {
       locale: 'zh-CN',
       timezoneId: 'Asia/Shanghai',
       viewport: { width: 1440, height: 900 },
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      userAgent: ARCH_UA,
     });
     const page = await context.newPage();
     // 先试 waitUntil load，不行再 networkidle（微信登录页的二维码是异步加载的，networkidle 能确保所有 JS 请求完成）
@@ -120,10 +128,8 @@ class ShipinhaoUploader extends BasePlatformUploader {
 
   /** 重写启动浏览器 —— 对齐 social-auto-upload：极简 launch + storageState */
   async launchBrowser({ headless = false } = {}) {
-    const browserName = this._browserPath.channel
-      ? (this._browserPath.channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome')
-      : '系统浏览器';
-    this.log(`🌐 启动浏览器（${browserName}），路径: ${this._browserPath.executablePath || '(channel 检测)'}`);
+    const browserName = this._browserPath.channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome';
+    this.log(`🌐 启动浏览器（${browserName}，Patchright channel 解析）`);
 
     // social-auto-upload 方式：只用 channel/executablePath + headless，不传任何 args
     this.browser = await chromium.launch({
