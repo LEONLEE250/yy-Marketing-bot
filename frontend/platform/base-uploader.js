@@ -19,23 +19,49 @@ function detectBrowserChannel() {
 
 /**
  * 查找浏览器，架构自适应（对标 social-auto-upload 的 channel 方式）：
- * - 只用 channel，让 Patchright 通过注册表自行解析浏览器路径 + 版本兼容性校验
- * - 不再使用 executablePath（32位 Chrome v128 的 CDP 协议不兼容 Patchright 1.61+，
- *   executablePath 会绕过兼容性检查导致启动失败）
+ * - 主方案：channel，让 Patchright 通过注册表自行解析（版本兼容性校验）
+ * - 兜底方案：executablePath 列表，channel 失败时逐条尝试
  * - 32位系统 → Edge（唯一保持更新的 Chromium 浏览器）
- * - 64位系统 → Chrome 优先，如果 Patchright 找不到 Chrome 会自然回退
+ * - 64位系统 → Chrome 优先
  *
- * @returns {{ channel: string }}
+ * @returns {{ channel: string, fallbackExes: string[] }}
  */
 function findBrowserPath() {
   const is64Bit = process.arch === 'x64' || process.env.PROCESSOR_ARCHITECTURE === 'AMD64' ||
     process.env.PROCESSOR_ARCHITEW6432 === 'AMD64';
 
-  // 只用 channel，让 Patchright 通过 Windows 注册表解析（支持 WoW64 重定向）
-  // social-auto-upload 就是只用 channel，不做 executablePath 搜索
   const channel = is64Bit ? 'chrome' : 'msedge';
   console.log(`[Browser] arch=${process.arch}, is64Bit=${is64Bit}, channel=${channel}`);
-  return { channel };
+
+  // 兜底：常见浏览器安装路径（channel 失败后逐条尝试）
+  const fallbackExes = [];
+  const localAppData = process.env.LOCALAPPDATA || '';
+  const progFiles = process.env.PROGRAMFILES || 'C:\\Program Files';
+  const progFilesX86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
+
+  if (is64Bit) {
+    // 64位：Chrome 优先
+    fallbackExes.push(
+      path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      path.join(progFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      path.join(progFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      // Edge 兜底
+      path.join(progFilesX86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      path.join(progFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      path.join(localAppData, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    );
+  } else {
+    // 32位：Edge 优先
+    fallbackExes.push(
+      path.join(progFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      path.join(localAppData, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      // Chrome 兜底
+      path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      path.join(progFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    );
+  }
+
+  return { channel, fallbackExes };
 }
 
 class BasePlatformUploader {
@@ -78,31 +104,68 @@ class BasePlatformUploader {
     return p;
   }
 
+  /** 
+   * 启动浏览器（channel 优先 + executablePath 兜底）
+   * channel 可能因 asar 打包环境、注册表差异等原因失败，自动回退到逐路径尝试
+   */
+  async _tryLaunch(launchFn, browserName) {
+    // ── 方案 1：channel（主方案）──
+    try {
+      this.log?.(`🌐 尝试 channel: ${browserName}`);
+      return await launchFn({ channel: this._browserPath.channel });
+    } catch (e1) {
+      this.log?.(`⚠️ channel 方式失败: ${e1.message}`);
+      console.error('[Browser] channel failed:', e1.message);
+    }
+
+    // ── 方案 2：逐条尝试 executablePath 兜底 ──
+    const fallbackExes = this._browserPath.fallbackExes || [];
+    for (const exe of fallbackExes) {
+      if (!fs.existsSync(exe)) continue;
+      try {
+        this.log?.(`🔄 尝试 executablePath: ${exe}`);
+        return await launchFn({ executablePath: exe });
+      } catch (e2) {
+        this.log?.(`⚠️ executablePath 也失败 (${path.basename(exe)}): ${e2.message}`);
+        console.error('[Browser] fallback exe failed:', exe, e2.message);
+      }
+    }
+
+    throw new Error(
+      `无法启动浏览器。已尝试 channel (${browserName}) 和 ${fallbackExes.filter(e => fs.existsSync(e)).length} 个本地路径，均失败。\n` +
+      `请确认已安装 ${browserName}。`
+    );
+  }
+
   /** 启动浏览器（patchright + channel 解析 + 持久化 Profile） */
   async launchBrowser({ headless = false } = {}) {
     const browserName = this._browserPath.channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome';
-    this.log?.(`🌐 使用 ${browserName}（Patchright channel 解析）`);
+    this.log?.(`🌐 启动 ${browserName}（channel 优先，exe 兜底）`);
 
     if (!fs.existsSync(this.userDataDir)) {
       fs.mkdirSync(this.userDataDir, { recursive: true });
     }
 
-    // 使用 launchPersistentContext 替代 args/--user-data-dir
-    this.context = await chromium.launchPersistentContext(this.userDataDir, {
-      headless,
-      ...this._browserPath,  // 展开 executablePath 或 channel
-      locale: 'zh-CN',
-      timezoneId: 'Asia/Shanghai',
-      permissions: ['geolocation'],
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        '--lang=zh-CN',
-        '--start-maximized',
-        '--no-sandbox',
-        '--no-first-run',
-        '--no-default-browser-check',
-      ]
-    });
+    // 使用 _tryLaunch 包装，自动 channel→exe 回退
+    const launchOptions = await this._tryLaunch(
+      (extraOpts) => chromium.launchPersistentContext(this.userDataDir, {
+        headless,
+        ...extraOpts,
+        locale: 'zh-CN',
+        timezoneId: 'Asia/Shanghai',
+        permissions: ['geolocation'],
+        args: [
+          '--disable-blink-features=AutomationControlled',
+          '--lang=zh-CN',
+          '--start-maximized',
+          '--no-sandbox',
+          '--no-first-run',
+          '--no-default-browser-check',
+        ]
+      }),
+      browserName
+    );
+    this.context = launchOptions;
     // 持久化 context 自带 storage，额外加载 Cookie JSON 确保抖音登录态
     if (fs.existsSync(this.cookiePath)) {
       try {

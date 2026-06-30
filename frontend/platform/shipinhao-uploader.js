@@ -17,6 +17,53 @@ const ARCH_UA = is64BitArch
 
 // ── 视频号登录（扫码）──
 // 注意：视频号登录不使用 antiDetectScript（微信风控不同，过度覆盖反而会触发检测）
+
+/** 
+ * 启动浏览器用于登录，channel→executablePath 双层回退
+ */
+async function _shipinhaoLaunch(userDataDir) {
+  const bp = findBrowserPath();
+  const browserName = bp.channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome';
+
+  const launch = (extraOpts) => chromium.launchPersistentContext(userDataDir, {
+    headless: false,
+    ...extraOpts,
+    args: [
+      '--no-sandbox',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-features=TranslateUI,MediaRouter',
+      '--lang=zh-CN',
+      '--start-maximized',
+    ],
+    locale: 'zh-CN',
+    timezoneId: 'Asia/Shanghai',
+    viewport: { width: 1440, height: 900 },
+    userAgent: ARCH_UA,
+  });
+
+  // 方案 1：channel
+  try {
+    console.log(`[ShipinhaoLogin] 尝试 channel: ${bp.channel}`);
+    return await launch({ channel: bp.channel });
+  } catch (e1) {
+    console.error('[ShipinhaoLogin] channel failed:', e1.message);
+  }
+
+  // 方案 2：逐条 executablePath
+  for (const exe of (bp.fallbackExes || [])) {
+    if (!fs.existsSync(exe)) continue;
+    try {
+      console.log(`[ShipinhaoLogin] 尝试 executablePath: ${exe}`);
+      return await launch({ executablePath: exe });
+    } catch (e2) {
+      console.error(`[ShipinhaoLogin] exe failed (${path.basename(exe)}):`, e2.message);
+    }
+  }
+
+  throw new Error(`无法启动${browserName}浏览器进行登录，channel 和 ${(bp.fallbackExes||[]).filter(e => fs.existsSync(e)).length} 个本地路径均失败`);
+}
+
 async function loginShipinhao(cookiePath, cookieDir, accountName, onQRCode) {
   let context = null;
   const userDataDir = path.join(cookieDir, 'profiles', accountName || 'default');
@@ -25,22 +72,7 @@ async function loginShipinhao(cookiePath, cookieDir, accountName, onQRCode) {
     const cookieDir2 = path.dirname(cookiePath);
     if (!fs.existsSync(cookieDir2)) fs.mkdirSync(cookieDir2, { recursive: true });
 
-    context = await chromium.launchPersistentContext(userDataDir, {
-      headless: false,
-      ...findBrowserPath(),
-      args: [
-        '--no-sandbox',
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--disable-features=TranslateUI,MediaRouter',
-        '--lang=zh-CN',
-        '--start-maximized',
-      ],
-      locale: 'zh-CN',
-      timezoneId: 'Asia/Shanghai',
-      viewport: { width: 1440, height: 900 },
-      userAgent: ARCH_UA,
-    });
+    context = await _shipinhaoLaunch(userDataDir);
     const page = await context.newPage();
     // 先试 waitUntil load，不行再 networkidle（微信登录页的二维码是异步加载的，networkidle 能确保所有 JS 请求完成）
     await page.goto('https://channels.weixin.qq.com/login.html', {
@@ -126,16 +158,19 @@ class ShipinhaoUploader extends BasePlatformUploader {
 
   log(msg) { this.onLog(msg); }
 
-  /** 重写启动浏览器 —— 对齐 social-auto-upload：极简 launch + storageState */
+  /** 重写启动浏览器 —— 对齐 social-auto-upload：极简 launch + storageState
+   *  增加 channel→executablePath 双层回退，应对 asar 打包环境兼容性
+   */
   async launchBrowser({ headless = false } = {}) {
     const browserName = this._browserPath.channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome';
-    this.log(`🌐 启动浏览器（${browserName}，Patchright channel 解析）`);
+    this.log(`🌐 启动浏览器（${browserName}，channel 优先，exe 兜底）`);
 
-    // social-auto-upload 方式：只用 channel/executablePath + headless，不传任何 args
-    this.browser = await chromium.launch({
-      headless,
-      ...this._browserPath,
-    });
+    // 使用基类的 _tryLaunch 自动 channel→exe 回退
+    const launchOptions = await this._tryLaunch(
+      (extraOpts) => chromium.launch({ headless, ...extraOpts }),
+      browserName
+    );
+    this.browser = launchOptions;
     this.context = await this.browser.newContext({
       storageState: this.cookiePath,
     });
