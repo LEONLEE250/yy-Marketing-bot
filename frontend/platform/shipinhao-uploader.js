@@ -1,7 +1,7 @@
 // ── 微信视频号上传器 ──
 // 登录: https://channels.weixin.qq.com/login.html
 // 发布: https://channels.weixin.qq.com/platform/post/create
-const { BasePlatformUploader, findBrowserPath } = require('./base-uploader.js');
+const { BasePlatformUploader, findBrowserPath, launchBrowserWithFallback } = require('./base-uploader.js');
 const { chromium } = require('patchright');
 const path = require('path');
 const fs = require('fs');
@@ -18,61 +18,35 @@ const ARCH_UA = is64BitArch
 // ── 视频号登录（扫码）──
 // 注意：视频号登录不使用 antiDetectScript（微信风控不同，过度覆盖反而会触发检测）
 
-/** 
- * 启动浏览器用于登录，channel→executablePath 双层回退
- */
-async function _shipinhaoLaunch(userDataDir) {
-  const bp = findBrowserPath();
-  const browserName = bp.channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome';
-
-  const launch = (extraOpts) => chromium.launchPersistentContext(userDataDir, {
-    headless: false,
-    ...extraOpts,
-    args: [
-      '--no-sandbox',
-      '--no-first-run',
-      '--no-default-browser-check',
-      '--disable-features=TranslateUI,MediaRouter',
-      '--lang=zh-CN',
-      '--start-maximized',
-    ],
-    locale: 'zh-CN',
-    timezoneId: 'Asia/Shanghai',
-    viewport: { width: 1440, height: 900 },
-    userAgent: ARCH_UA,
-  });
-
-  // 方案 1：channel
-  try {
-    console.log(`[ShipinhaoLogin] 尝试 channel: ${bp.channel}`);
-    return await launch({ channel: bp.channel });
-  } catch (e1) {
-    console.error('[ShipinhaoLogin] channel failed:', e1.message);
-  }
-
-  // 方案 2：逐条 executablePath
-  for (const exe of (bp.fallbackExes || [])) {
-    if (!fs.existsSync(exe)) continue;
-    try {
-      console.log(`[ShipinhaoLogin] 尝试 executablePath: ${exe}`);
-      return await launch({ executablePath: exe });
-    } catch (e2) {
-      console.error(`[ShipinhaoLogin] exe failed (${path.basename(exe)}):`, e2.message);
-    }
-  }
-
-  throw new Error(`无法启动${browserName}浏览器进行登录，channel 和 ${(bp.fallbackExes||[]).filter(e => fs.existsSync(e)).length} 个本地路径均失败`);
-}
-
 async function loginShipinhao(cookiePath, cookieDir, accountName, onQRCode) {
   let context = null;
   const userDataDir = path.join(cookieDir, 'profiles', accountName || 'default');
+  const browserPath = findBrowserPath();
   try {
     if (!fs.existsSync(userDataDir)) fs.mkdirSync(userDataDir, { recursive: true });
     const cookieDir2 = path.dirname(cookiePath);
     if (!fs.existsSync(cookieDir2)) fs.mkdirSync(cookieDir2, { recursive: true });
 
-    context = await _shipinhaoLaunch(userDataDir);
+    context = await launchBrowserWithFallback(
+      browserPath,
+      (opts) => chromium.launchPersistentContext(userDataDir, {
+        headless: false,
+        ...opts,
+        args: [
+          '--no-sandbox',
+          '--no-first-run',
+          '--no-default-browser-check',
+          '--disable-features=TranslateUI,MediaRouter',
+          '--lang=zh-CN',
+          '--start-maximized',
+        ],
+        locale: 'zh-CN',
+        timezoneId: 'Asia/Shanghai',
+        viewport: { width: 1440, height: 900 },
+        userAgent: ARCH_UA,
+      }),
+      (msg) => console.log('[ShipinhaoLogin]', msg)
+    );
     const page = await context.newPage();
     // 先试 waitUntil load，不行再 networkidle（微信登录页的二维码是异步加载的，networkidle 能确保所有 JS 请求完成）
     await page.goto('https://channels.weixin.qq.com/login.html', {

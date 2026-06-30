@@ -2,27 +2,76 @@
 const { chromium } = require('patchright');
 const path = require('path');
 const fs = require('fs');
+const { execSync } = require('child_process');
 const { antiDetectScript } = require('./anti-detect.js');
+
+/** 常见浏览器安装路径（供搜索用） */
+function getStandardBrowserPaths() {
+  const localAppData = process.env.LOCALAPPDATA || '';
+  const progFiles = process.env.PROGRAMFILES || 'C:\\Program Files';
+  const progFilesX86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
+
+  return {
+    chrome: [
+      path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      path.join(progFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      path.join(progFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    ],
+    msedge: [
+      path.join(progFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      path.join(progFilesX86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+      path.join(localAppData, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+    ],
+  };
+}
+
+/** 用 where 命令查找浏览器（覆盖非标准安装路径） */
+function findByWhere(command) {
+  try {
+    const result = execSync(`where ${command}`, { encoding: 'utf8', timeout: 3000, windowsHide: true });
+    const lines = result.trim().split('\r\n').filter(Boolean);
+    for (const line of lines) {
+      const exe = line.trim();
+      if (exe.toLowerCase().endsWith('.exe') && fs.existsSync(exe)) return exe;
+    }
+  } catch (_) {}
+  return null;
+}
+
+/** 搜索所有已知 Chrome / Edge 安装位置 */
+function findInstalledBrowsers() {
+  const std = getStandardBrowserPaths();
+  const found = { chrome: null, msedge: null };
+
+  for (const p of std.chrome) {
+    if (fs.existsSync(p)) { found.chrome = p; break; }
+  }
+  for (const p of std.msedge) {
+    if (fs.existsSync(p)) { found.msedge = p; break; }
+  }
+
+  // where 命令兜底（可找到非标准路径，如绿色版、企业安装目录等）
+  if (!found.chrome) found.chrome = findByWhere('chrome');
+  if (!found.msedge) found.msedge = findByWhere('msedge');
+
+  return found;
+}
 
 /** 检测可用浏览器（仅供前端显示用） */
 function detectBrowserChannel() {
-  const edgePaths = [
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    process.env.LOCALAPPDATA + '\\Microsoft\\Edge\\Application\\msedge.exe',
-  ];
-  for (const p of edgePaths) {
-    if (fs.existsSync(p)) return 'msedge';
-  }
-  return 'chrome';
+  const found = findInstalledBrowsers();
+  if (found.msedge) return 'msedge';
+  if (found.chrome) return 'chrome';
+  return 'chrome'; // 默认返回 chrome，后续会报缺浏览器
 }
 
 /**
- * 查找浏览器，架构自适应（对标 social-auto-upload 的 channel 方式）：
- * - 主方案：channel，让 Patchright 通过注册表自行解析（版本兼容性校验）
- * - 兜底方案：executablePath 列表，channel 失败时逐条尝试
- * - 32位系统 → Edge（唯一保持更新的 Chromium 浏览器）
- * - 64位系统 → Chrome 优先
+ * 查找浏览器，实际安装优先：
+ * - 主方案：channel（已安装的浏览器，Patchright 注册表解析）
+ * - 兜底：可执行文件路径，channel 失败时逐条尝试
+ * - 32位系统 → 优先 Edge（CDP 协议不兼容旧 Chrome）
+ * - 64位系统 → 优先 Chrome
+ * - 如果优先浏览器未安装，自动换另一个浏览器
  *
  * @returns {{ channel: string, fallbackExes: string[] }}
  */
@@ -30,38 +79,65 @@ function findBrowserPath() {
   const is64Bit = process.arch === 'x64' || process.env.PROCESSOR_ARCHITECTURE === 'AMD64' ||
     process.env.PROCESSOR_ARCHITEW6432 === 'AMD64';
 
-  const channel = is64Bit ? 'chrome' : 'msedge';
-  console.log(`[Browser] arch=${process.arch}, is64Bit=${is64Bit}, channel=${channel}`);
+  const found = findInstalledBrowsers();
+  let primary = is64Bit ? 'chrome' : 'msedge';
+  let secondary = is64Bit ? 'msedge' : 'chrome';
 
-  // 兜底：常见浏览器安装路径（channel 失败后逐条尝试）
-  const fallbackExes = [];
-  const localAppData = process.env.LOCALAPPDATA || '';
-  const progFiles = process.env.PROGRAMFILES || 'C:\\Program Files';
-  const progFilesX86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
-
-  if (is64Bit) {
-    // 64位：Chrome 优先
-    fallbackExes.push(
-      path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe'),
-      path.join(progFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
-      path.join(progFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
-      // Edge 兜底
-      path.join(progFilesX86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-      path.join(progFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-      path.join(localAppData, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-    );
-  } else {
-    // 32位：Edge 优先
-    fallbackExes.push(
-      path.join(progFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-      path.join(localAppData, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
-      // Chrome 兜底
-      path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe'),
-      path.join(progFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
-    );
+  // 如果优先浏览器未安装，自动切换到另一个
+  if (!found[primary] && found[secondary]) {
+    console.log(`[Browser] ${primary} 未安装，切换到 ${secondary}`);
+    [primary, secondary] = [secondary, primary];
   }
 
-  return { channel, fallbackExes };
+  // fallbackExes: 主浏览器 + 次浏览器（按优先级排序）
+  const fallbackExes = [];
+  if (found[primary]) fallbackExes.push(found[primary]);
+  if (found[secondary]) fallbackExes.push(found[secondary]);
+
+  console.log(`[Browser] arch=${process.arch}, primary=${primary}, secondary=${secondary}, found=${JSON.stringify(found)}`);
+
+  return { channel: primary, fallbackExes };
+}
+
+/**
+ * 通用浏览器启动回退封装
+ * @param {{ channel: string, fallbackExes: string[] }} browserPath
+ * @param {(opts: {channel?: string, executablePath?: string}) => Promise<any>} launchFn
+ * @param {Function|null} logFn
+ */
+async function launchBrowserWithFallback(browserPath, launchFn, logFn = null) {
+  const browserName = browserPath.channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome';
+
+  // ── 方案 1：channel（Patchright 注册表解析）──
+  try {
+    logFn?.(`🌐 尝试 channel: ${browserName}`);
+    console.log(`[Browser] try channel: ${browserPath.channel}`);
+    return await launchFn({ channel: browserPath.channel });
+  } catch (e1) {
+    logFn?.(`⚠️ channel 方式失败: ${e1.message}`);
+    console.error('[Browser] channel failed:', e1.message);
+  }
+
+  // ── 方案 2：逐条 executablePath 兜底 ──
+  const fallbackExes = browserPath.fallbackExes || [];
+  const existing = fallbackExes.filter(e => fs.existsSync(e));
+  logFn?.(`🔄 channel 失败，尝试 ${existing.length} 个本地路径`);
+  for (const exe of fallbackExes) {
+    if (!fs.existsSync(exe)) continue;
+    try {
+      logFn?.(`🔄 尝试 executablePath: ${exe}`);
+      console.log(`[Browser] try executablePath: ${exe}`);
+      return await launchFn({ executablePath: exe });
+    } catch (e2) {
+      logFn?.(`⚠️ executablePath 也失败 (${path.basename(exe)}): ${e2.message}`);
+      console.error('[Browser] fallback exe failed:', exe, e2.message);
+    }
+  }
+
+  throw new Error(
+    `无法启动浏览器。已尝试 channel (${browserName}) 和 ${existing.length} 个本地路径，均失败。\n` +
+    `请确认已安装 ${browserName}（Edge / Chrome 均可）。`
+  );
 }
 
 class BasePlatformUploader {
@@ -106,35 +182,13 @@ class BasePlatformUploader {
 
   /** 
    * 启动浏览器（channel 优先 + executablePath 兜底）
-   * channel 可能因 asar 打包环境、注册表差异等原因失败，自动回退到逐路径尝试
+   * 复用模块级 launchBrowserWithFallback
    */
   async _tryLaunch(launchFn, browserName) {
-    // ── 方案 1：channel（主方案）──
-    try {
-      this.log?.(`🌐 尝试 channel: ${browserName}`);
-      return await launchFn({ channel: this._browserPath.channel });
-    } catch (e1) {
-      this.log?.(`⚠️ channel 方式失败: ${e1.message}`);
-      console.error('[Browser] channel failed:', e1.message);
-    }
-
-    // ── 方案 2：逐条尝试 executablePath 兜底 ──
-    const fallbackExes = this._browserPath.fallbackExes || [];
-    for (const exe of fallbackExes) {
-      if (!fs.existsSync(exe)) continue;
-      try {
-        this.log?.(`🔄 尝试 executablePath: ${exe}`);
-        return await launchFn({ executablePath: exe });
-      } catch (e2) {
-        this.log?.(`⚠️ executablePath 也失败 (${path.basename(exe)}): ${e2.message}`);
-        console.error('[Browser] fallback exe failed:', exe, e2.message);
-      }
-    }
-
-    throw new Error(
-      `无法启动浏览器。已尝试 channel (${browserName}) 和 ${fallbackExes.filter(e => fs.existsSync(e)).length} 个本地路径，均失败。\n` +
-      `请确认已安装 ${browserName}。`
-    );
+    return await launchBrowserWithFallback(this._browserPath, (opts) => {
+      this.log?.(`🌐 尝试启动 ${browserName}`);
+      return launchFn(opts);
+    }, (msg) => this.log?.(msg));
   }
 
   /** 启动浏览器（patchright + channel 解析 + 持久化 Profile） */
@@ -209,4 +263,4 @@ class BasePlatformUploader {
   }
 }
 
-module.exports = { BasePlatformUploader, detectBrowserChannel, findBrowserPath };
+module.exports = { BasePlatformUploader, detectBrowserChannel, findBrowserPath, launchBrowserWithFallback };

@@ -3,7 +3,7 @@ const { chromium } = require('patchright');
 const path = require('path');
 const fs = require('fs');
 const { antiDetectScript } = require('./anti-detect.js');
-const { detectBrowserChannel, findBrowserPath } = require('./base-uploader.js');
+const { detectBrowserChannel, findBrowserPath, launchBrowserWithFallback } = require('./base-uploader.js');
 
 // ── Cookie 校验（用系统浏览器 + channel）──
 
@@ -18,11 +18,15 @@ async function checkDouyinCookie(cookiePath) {
   let browser = null;
   const browserPath = findBrowserPath();
   try {
-    browser = await chromium.launch({
-      headless: false,
-      ...browserPath,
-      args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
-    });
+    browser = await launchBrowserWithFallback(
+      browserPath,
+      (opts) => chromium.launch({
+        headless: false,
+        ...opts,
+        args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
+      }),
+      (msg) => console.log('[CookieManager]', msg)
+    );
     const context = await browser.newContext({ storageState: cookiePath });
     await context.addInitScript(antiDetectScript);
     const page = await context.newPage();
@@ -52,18 +56,22 @@ async function loginDouyin(cookiePath, cookieDir, accountName, onQRCode) {
   try {
     if (!fs.existsSync(userDataDir)) fs.mkdirSync(userDataDir, { recursive: true });
 
-    // 持久化 context — 替代 chromium.launch + user-data-dir args
-    context = await chromium.launchPersistentContext(userDataDir, {
-      headless: false,
-      ...browserPath,
-      locale: 'zh-CN',
-      timezoneId: 'Asia/Shanghai',
-      permissions: ['geolocation'],
-      args: [
-        '--disable-blink-features=AutomationControlled',
-        '--no-sandbox',
-      ],
-    });
+    // 持久化 context — 用 launchBrowserWithFallback 自动 channel→exe 回退
+    context = await launchBrowserWithFallback(
+      browserPath,
+      (opts) => chromium.launchPersistentContext(userDataDir, {
+        headless: false,
+        ...opts,
+        locale: 'zh-CN',
+        timezoneId: 'Asia/Shanghai',
+        permissions: ['geolocation'],
+        args: [
+          '--disable-blink-features=AutomationControlled',
+          '--no-sandbox',
+        ],
+      }),
+      (msg) => console.log('[CookieManager]', msg)
+    );
     await context.addInitScript(antiDetectScript);
     const page = await context.newPage();
     await page.goto('https://creator.douyin.com/', { waitUntil: 'domcontentloaded' });
