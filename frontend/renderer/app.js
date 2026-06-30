@@ -1100,20 +1100,33 @@ function downloadUpdate(url, contentEl) {
   let downloadedPath = null;
 
   window.electronAPI.onDownloadProgress((data) => {
-    if (data.status === 'downloading') {
+    if (data.status === 'preparing') {
+      fill.style.width = '0%';
+      text.textContent = '0%';
+      status.textContent = '正在解析下载地址...';
+    } else if (data.status === 'resuming') {
+      fill.style.width = '5%';
+      text.textContent = '续传中...';
+      status.textContent = '检测到未完成的下载，从断点继续';
+    } else if (data.status === 'downloading') {
       if (data.totalSize > 0) {
         fill.style.width = data.progress + '%';
         text.textContent = data.progress + '%';
       } else {
-        fill.style.width = '50%';  // indeterminate
+        fill.style.width = '50%';
         text.textContent = Math.round(data.downloaded / 1024 / 1024) + ' MB';
       }
-      status.textContent = '正在下载安装包...';
+      let statusText = '正在下载...';
+      if (data.speed) statusText += ' ' + data.speed;
+      if (data.elapsed) statusText += ' | 已用时 ' + data.elapsed + 's';
+      status.textContent = statusText;
     } else if (data.status === 'complete') {
       downloadedPath = data.filePath;
       fill.style.width = '100%';
       text.textContent = '100%';
-      status.textContent = '下载完成';
+      let completeText = '下载完成';
+      if (data.speed) completeText += ' (平均 ' + data.speed + ')';
+      status.textContent = completeText;
       // 替换为安装按钮
       contentEl.querySelector('.modal-footer').innerHTML = `
         <button class="btn btn-ghost" onclick="dialogEl.remove()">稍后安装</button>

@@ -38,7 +38,7 @@ process.on('uncaughtException', (err) => {
 // ── Preview 常量 ──────────────────────────────────────────
 const BACKEND_PORT = 5680;
 const EXPECTED_CHANNEL = 'preview';
-const EXPECTED_VERSION = '4.0.4';
+const EXPECTED_VERSION = '4.0.5';
 
 let mainWindow;
 let backendProcess;
@@ -926,65 +926,160 @@ function createWindow() {
     }
   });
 
-  // 下载更新包
+  // 下载更新包（断点续传 + DNS预解析 + 速度显示 + 长超时）
   ipcMain.handle('download-update', async (event, downloadUrl) => {
     const downloadsDir = app.getPath('downloads');
     const fileName = '壹准AI营销助手_Setup.exe';
     const filePath = path.join(downloadsDir, fileName);
 
-    mainWindow.webContents.send('download-progress', { status: 'downloading', progress: 0 });
+    const send = (data) => mainWindow.webContents.send('download-progress', data);
+    send({ status: 'preparing', progress: 0 });
 
     return new Promise((resolve, reject) => {
-      const file = fs.createWriteStream(filePath);
-      let finalUrl = downloadUrl;
+      const TEMP_EXT = '.yizhun_download';
+      const tmpPath = filePath + TEMP_EXT;
+
+      // ── 断点续传：如果已有部分下载，从断点继续 ──
+      let startOffset = 0;
+      try {
+        if (fs.existsSync(tmpPath)) startOffset = fs.statSync(tmpPath).size;
+      } catch (_) {}
+
+      const fileStream = fs.createWriteStream(tmpPath, {
+        flags: startOffset > 0 ? 'a' : 'w'
+      });
       let redirectCount = 0;
+      let startTime = Date.now();
+      let totalSize = 0;
+      let downloaded = startOffset;
+
+      function formatSpeed(bytes, elapsedMs) {
+        const mb = bytes / 1024 / 1024;
+        const sec = elapsedMs / 1000;
+        return sec > 0.5 ? (mb / sec).toFixed(1) + ' MB/s' : '计算中...';
+      }
 
       function makeRequest(url) {
-        finalUrl = url;
         const proto = url.startsWith('https') ? https : require('http');
-        const req = proto.get(url, { headers: { 'User-Agent': 'YizhunApp/2.0' } }, (response) => {
-          // Follow redirects (GitHub → S3)
-          if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
-            redirectCount++;
-            if (redirectCount > 5) return reject(new Error('Too many redirects'));
-            return makeRequest(response.headers.location);
+
+        // ── DNS 预解析：先 resolve 再连接，避免 DNS 超时 ──
+        const urlObj = new URL(url);
+        const dns = require('dns');
+        const connectHost = urlObj.hostname;
+        const connectPort = urlObj.port || (url.startsWith('https') ? 443 : 80);
+
+        dns.resolve4(connectHost, (dnsErr, addresses) => {
+          if (dnsErr) {
+            // DNS 失败，直接原生连接（让系统自行解析）
+            addresses = [];
           }
 
-          const totalSize = parseInt(response.headers['content-length'] || '0', 10);
-          let downloaded = 0;
+          const headers = { 'User-Agent': 'YizhunApp/4.0' };
+          if (startOffset > 0) {
+            headers['Range'] = `bytes=${startOffset}-`;
+            send({ status: 'resuming', progress: 0, resumeAt: startOffset });
+          }
 
-          response.on('data', (chunk) => {
-            downloaded += chunk.length;
-            const pct = totalSize > 0 ? Math.round((downloaded / totalSize) * 100) : Math.round(downloaded / 1024 / 1024);
-            mainWindow.webContents.send('download-progress', { status: 'downloading', progress: pct, downloaded, totalSize });
+          const req = proto.get(url, {
+            headers,
+            // 长超时：连接 60 秒、空闲 5 分钟，避免慢速网络被误杀
+            timeout: 300000,
+          }, (response) => {
+            // Follow redirects (GitHub → S3)
+            if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+              redirectCount++;
+              if (redirectCount > 5) {
+                send({ status: 'error', error: '重定向次数过多' });
+                return reject(new Error('重定向次数过多'));
+              }
+              return makeRequest(response.headers.location);
+            }
+
+            // 206 表示断点续传生效
+            if (response.statusCode === 206) {
+              send({ status: 'resuming', progress: 0, resumeAt: startOffset });
+            } else if (response.statusCode !== 200) {
+              send({ status: 'error', error: `服务器返回 ${response.statusCode}` });
+              return reject(new Error(`HTTP ${response.statusCode}`));
+            }
+
+            const contentLen = parseInt(response.headers['content-length'] || '0', 10);
+            if (response.statusCode === 206) {
+              // Range 请求返回的是剩余字节
+              totalSize = startOffset + contentLen;
+            } else {
+              totalSize = contentLen;
+            }
+
+            let lastUpdate = Date.now();
+            let lastBytes = downloaded;
+
+            response.on('data', (chunk) => {
+              downloaded += chunk.length;
+              const now = Date.now();
+              // 每 300ms 更新一次进度，减少 IPC 频率
+              if (now - lastUpdate < 300) return;
+              lastUpdate = now;
+              const elapsed = now - startTime;
+              const speed = formatSpeed(downloaded - startOffset, elapsed);
+              const pct = totalSize > 0 ? Math.round((downloaded / totalSize) * 100) : 0;
+              send({
+                status: 'downloading',
+                progress: pct,
+                downloaded,
+                totalSize,
+                speed,
+                elapsed: Math.round(elapsed / 1000),
+              });
+              lastBytes = downloaded;
+            });
+
+            response.pipe(fileStream);
+
+            fileStream.on('finish', () => {
+              fileStream.close();
+              // 重命名为正式文件
+              try {
+                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                fs.renameSync(tmpPath, filePath);
+              } catch (e) {
+                // rename 失败时尝试 copy+delete
+                try {
+                  fs.copyFileSync(tmpPath, filePath);
+                  fs.unlinkSync(tmpPath);
+                } catch (e2) {
+                  return reject(new Error('安装包保存失败: ' + e2.message));
+                }
+              }
+
+              const elapsed = (Date.now() - startTime) / 1000;
+              const finalSpeed = formatSpeed(downloaded - startOffset, Date.now() - startTime);
+              send({ status: 'complete', filePath, speed: finalSpeed, elapsed: Math.round(elapsed) });
+              resolve({ success: true, filePath });
+            });
+
+            fileStream.on('error', (err) => {
+              fileStream.close();
+              send({ status: 'error', error: `写入失败: ${err.message}` });
+              reject(err);
+            });
           });
 
-          response.pipe(file);
-
-          file.on('finish', () => {
-            file.close();
-            mainWindow.webContents.send('download-progress', { status: 'complete', filePath });
-            resolve({ success: true, filePath });
-          });
-
-          file.on('error', (err) => {
-            file.close();
-            try { fs.unlinkSync(filePath); } catch (e) {}
-            mainWindow.webContents.send('download-progress', { status: 'error', error: err.message });
+          req.on('error', (err) => {
+            fileStream.close();
+            // 保留临时文件以备续传
+            send({ status: 'error', error: `网络错误: ${err.message}（已保存进度，可重试）` });
             reject(err);
           });
-        });
 
-        req.on('error', (err) => {
-          file.close();
-          try { fs.unlinkSync(filePath); } catch (e) {}
-          mainWindow.webContents.send('download-progress', { status: 'error', error: err.message });
-          reject(err);
-        });
-
-        req.setTimeout(30000, () => {
-          req.destroy();
-          reject(new Error('连接超时'));
+          // Socket 超时设为 60 秒（应对缓慢响应）
+          req.on('socket', (socket) => {
+            socket.setTimeout(60000);
+            socket.on('timeout', () => {
+              req.destroy();
+              reject(new Error('服务器响应超时，请重试'));
+            });
+          });
         });
       }
 
