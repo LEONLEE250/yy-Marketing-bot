@@ -18,31 +18,45 @@ function detectBrowserChannel() {
 }
 
 /**
- * 查找系统浏览器可执行文件路径（跨架构兼容：32位 / 64位 通用）
- * @returns {{ executablePath?: string, channel?: string }}
+ * 查找浏览器可执行文件，架构自适应：
+ * - 32位系统：Edge 优先（唯一保持更新的 Chromium 浏览器，Chrome 已停更且 CDP 协议不兼容）
+ * - 64位系统：Chrome 优先，Edge 兜底
+ *
+ * @returns {{ executablePath: string } | { channel: string }}
  */
 function findBrowserPath() {
-  // ── Chrome 路径（按优先级） ──
-  const chromePaths = [
+  const is64Bit = process.arch === 'x64' || process.env.PROCESSOR_ARCHITECTURE === 'AMD64' ||
+    process.env.PROCESSOR_ARCHITEW6432 === 'AMD64';
+
+  // 32 位系统：Edge 在前（Chrome v128 已停更，CDP 协议不兼容 Patchright 1.61+）
+  // 64 位系统：Chrome 在前
+  const primaryPaths = is64Bit ? [
     process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-  ];
-  for (const p of chromePaths) {
-    if (fs.existsSync(p)) return { executablePath: p };
-  }
-
-  // ── Edge 路径 ──
-  const edgePaths = [
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  ] : [
     'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
     process.env.LOCALAPPDATA + '\\Microsoft\\Edge\\Application\\msedge.exe',
   ];
-  for (const p of edgePaths) {
+
+  for (const p of primaryPaths) {
     if (fs.existsSync(p)) return { executablePath: p };
   }
 
-  // ── 宽搜：用 where 命令 ──
+  const secondaryPaths = is64Bit ? [
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    process.env.LOCALAPPDATA + '\\Microsoft\\Edge\\Application\\msedge.exe',
+  ] : [
+    process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  ];
+
+  for (const p of secondaryPaths) {
+    if (fs.existsSync(p)) return { executablePath: p };
+  }
+
+  // ── 宽搜兜底 ──
   try {
     const result = require('child_process').execSync('where chrome 2>nul', { encoding: 'utf8', timeout: 3000 });
     const lines = result.trim().split('\n').filter(l => l.toLowerCase().includes('chrome'));
@@ -61,8 +75,8 @@ function findBrowserPath() {
     }
   } catch (_) {}
 
-  // ── 最终回退：用 channel（patchright 自带检测）──
-  return { channel: 'chrome' };
+  // ── 最后回退：channel（patchright 自带检测，但 32 位系统 registry 路径可能不同）──
+  return { channel: is64Bit ? 'chrome' : 'msedge' };
 }
 
 class BasePlatformUploader {
