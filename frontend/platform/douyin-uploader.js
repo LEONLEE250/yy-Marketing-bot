@@ -57,7 +57,19 @@ class DouyinUploader extends BasePlatformUploader {
       // Step 2: 上传视频文件
       this.log('📤 上传视频文件...');
       await this.page.waitForSelector("div[class^='container'] input", { state: 'attached', timeout: 60000 });
-      await this.page.locator("div[class^='container'] input").setInputFiles(this.filePath);
+      try {
+        await this.page.locator("div[class^='container'] input").setInputFiles(this.filePath);
+      } catch (e) {
+        if (e.message && e.message.includes('EBADF')) {
+          this.log('⚠️ EBADF，尝试复制到临时目录后重试...');
+          const td = path.join(require('os').tmpdir(), 'yizhun-upload');
+          if (!fs.existsSync(td)) fs.mkdirSync(td, { recursive: true });
+          const cp = path.join(td, path.basename(this.filePath));
+          fs.copyFileSync(this.filePath, cp);
+          await this.page.locator("div[class^='container'] input").setInputFiles(cp);
+        } else throw e;
+      }
+      this.log('✅ 视频文件已上传');
 
       // Step 3: 等待进入发布页（v1 或 v2）
       this.log('⏳ 等待进入发布页...');

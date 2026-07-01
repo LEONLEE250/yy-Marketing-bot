@@ -3,7 +3,7 @@ const { chromium } = require('patchright');
 const path = require('path');
 const fs = require('fs');
 const { antiDetectScript } = require('./anti-detect.js');
-const { detectBrowserChannel, findBrowserPath, launchBrowserWithFallback } = require('./base-uploader.js');
+const { detectBrowserChannel, findBrowserPath } = require('./base-uploader.js');
 
 // ── Cookie 校验（用系统浏览器 + channel）──
 
@@ -16,17 +16,24 @@ async function checkDouyinCookie(cookiePath) {
   } catch { return false; }
 
   let browser = null;
-  const browserPath = findBrowserPath();
+  const bp = findBrowserPath();
   try {
-    browser = await launchBrowserWithFallback(
-      browserPath,
-      (opts) => chromium.launch({
+    // 抖音优先 Chrome；channel 失败时 fallback 到 executablePath
+    try {
+      browser = await chromium.launch({
         headless: false,
-        ...opts,
+        channel: bp.channel,
         args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
-      }),
-      (msg) => console.log('[CookieManager]', msg)
-    );
+      });
+    } catch (e1) {
+      if (bp.executablePath) {
+        browser = await chromium.launch({
+          headless: false,
+          executablePath: bp.executablePath,
+          args: ['--disable-blink-features=AutomationControlled', '--no-sandbox'],
+        });
+      } else throw e1;
+    }
     const context = await browser.newContext({ storageState: cookiePath });
     await context.addInitScript(antiDetectScript);
     const page = await context.newPage();
@@ -51,27 +58,39 @@ async function checkDouyinCookie(cookiePath) {
 
 async function loginDouyin(cookiePath, cookieDir, accountName, onQRCode) {
   let context = null;
-  const browserPath = findBrowserPath();
+  const bp = findBrowserPath();
   const userDataDir = path.join(cookieDir, 'profiles', accountName || 'default');
   try {
     if (!fs.existsSync(userDataDir)) fs.mkdirSync(userDataDir, { recursive: true });
 
-    // 持久化 context — 用 launchBrowserWithFallback 自动 channel→exe 回退
-    context = await launchBrowserWithFallback(
-      browserPath,
-      (opts) => chromium.launchPersistentContext(userDataDir, {
-        headless: false,
-        ...opts,
-        locale: 'zh-CN',
-        timezoneId: 'Asia/Shanghai',
-        permissions: ['geolocation'],
-        args: [
-          '--disable-blink-features=AutomationControlled',
-          '--no-sandbox',
-        ],
-      }),
-      (msg) => console.log('[CookieManager]', msg)
-    );
+    const commonOpts = {
+      headless: false,
+      locale: 'zh-CN',
+      timezoneId: 'Asia/Shanghai',
+      permissions: ['geolocation'],
+      args: [
+        '--disable-blink-features=AutomationControlled',
+        '--no-sandbox',
+      ],
+    };
+
+    // 抖音优先 Chrome：channel 失败时用 executablePath 兜底
+    let channel = bp.channel;
+    let executablePath = bp.executablePath;
+    if (channel === 'chrome' && bp.chromePath) executablePath = bp.chromePath;
+    try {
+      context = await chromium.launchPersistentContext(userDataDir, {
+        ...commonOpts,
+        channel,
+      });
+    } catch (e1) {
+      if (executablePath) {
+        context = await chromium.launchPersistentContext(userDataDir, {
+          ...commonOpts,
+          executablePath,
+        });
+      } else throw e1;
+    }
     await context.addInitScript(antiDetectScript);
     const page = await context.newPage();
     await page.goto('https://creator.douyin.com/', { waitUntil: 'domcontentloaded' });

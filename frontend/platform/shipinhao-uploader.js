@@ -1,52 +1,53 @@
 // ── 微信视频号上传器 ──
 // 登录: https://channels.weixin.qq.com/login.html
 // 发布: https://channels.weixin.qq.com/platform/post/create
-const { BasePlatformUploader, findBrowserPath, launchBrowserWithFallback } = require('./base-uploader.js');
+const { BasePlatformUploader, detectBrowserChannel, findBrowserPath } = require('./base-uploader.js');
 const { chromium } = require('patchright');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { antiDetectScript, randomDelay } = require('./anti-detect.js');
-
-// 架构感知的 User-Agent
-const is64BitArch = process.arch === 'x64' || process.env.PROCESSOR_ARCHITECTURE === 'AMD64' ||
-  process.env.PROCESSOR_ARCHITEW6432 === 'AMD64';
-const ARCH_UA = is64BitArch
-  ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-  : 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 // ── 视频号登录（扫码）──
 // 注意：视频号登录不使用 antiDetectScript（微信风控不同，过度覆盖反而会触发检测）
-
 async function loginShipinhao(cookiePath, cookieDir, accountName, onQRCode) {
   let context = null;
   const userDataDir = path.join(cookieDir, 'profiles', accountName || 'default');
-  const browserPath = findBrowserPath();
   try {
     if (!fs.existsSync(userDataDir)) fs.mkdirSync(userDataDir, { recursive: true });
     const cookieDir2 = path.dirname(cookiePath);
     if (!fs.existsSync(cookieDir2)) fs.mkdirSync(cookieDir2, { recursive: true });
 
-    context = await launchBrowserWithFallback(
-      browserPath,
-      (opts) => chromium.launchPersistentContext(userDataDir, {
-        headless: false,
-        ...opts,
-        args: [
-          '--no-sandbox',
-          '--no-first-run',
-          '--no-default-browser-check',
-          '--disable-features=TranslateUI,MediaRouter',
-          '--lang=zh-CN',
-          '--start-maximized',
-        ],
-        locale: 'zh-CN',
-        timezoneId: 'Asia/Shanghai',
-        viewport: { width: 1440, height: 900 },
-        userAgent: ARCH_UA,
-      }),
-      (msg) => console.log('[ShipinhaoLogin]', msg)
-    );
+    const bp = findBrowserPath();
+    const commonOpts = {
+      headless: false,
+      args: [
+        '--no-sandbox',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-features=TranslateUI,MediaRouter',
+        '--lang=zh-CN',
+        '--start-maximized',
+      ],
+      locale: 'zh-CN',
+      timezoneId: 'Asia/Shanghai',
+      viewport: { width: 1440, height: 900 },
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    };
+
+    // 64位: channel 正常；32位: channel 失败时 fallback 到 executablePath
+    try {
+      context = await chromium.launchPersistentContext(userDataDir, {
+        ...commonOpts,
+        channel: bp.channel,
+      });
+    } catch (e1) {
+      if (bp.executablePath) {
+        context = await chromium.launchPersistentContext(userDataDir, {
+          ...commonOpts,
+          executablePath: bp.executablePath,
+        });
+      } else throw e1;
+    }
     const page = await context.newPage();
     // 先试 waitUntil load，不行再 networkidle（微信登录页的二维码是异步加载的，networkidle 能确保所有 JS 请求完成）
     await page.goto('https://channels.weixin.qq.com/login.html', {
@@ -126,25 +127,20 @@ class ShipinhaoUploader extends BasePlatformUploader {
     this.thumbnailPath = opts.thumbnailPath || '';
     this.onLog = opts.onLog || (() => {});
     this.browser = null; // 视频号不继承基类 launchPersistentContext,用独立 launch
-    // 确保 _browserPath 已初始化（父类构造函数调用时可能未执行至此）
-    if (!this._browserPath) this._browserPath = findBrowserPath();
   }
 
   log(msg) { this.onLog(msg); }
 
-  /** 重写启动浏览器 —— 对齐 social-auto-upload：极简 launch + storageState
-   *  增加 channel→executablePath 双层回退，应对 asar 打包环境兼容性
-   */
+  /** 重写启动浏览器 —— 使用与登录相同的持久化 Profile */
   async launchBrowser({ headless = false } = {}) {
-    const browserName = this._browserPath.channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome';
-    this.log(`🌐 启动浏览器（${browserName}，channel 优先，exe 兜底）`);
+    const channel = this.browserChannel;
+    this.log(`🌐 启动浏览器（${channel === 'msedge' ? 'Microsoft Edge' : 'Google Chrome'}）...`);
 
-    // 使用基类的 _tryLaunch 自动 channel→exe 回退
-    const launchOptions = await this._tryLaunch(
-      (extraOpts) => chromium.launch({ headless, ...extraOpts }),
-      browserName
-    );
-    this.browser = launchOptions;
+    // social-auto-upload 方式：只用 channel + headless，不传任何 args
+    this.browser = await chromium.launch({
+      headless,
+      channel,
+    });
     this.context = await this.browser.newContext({
       storageState: this.cookiePath,
     });
@@ -189,14 +185,16 @@ class ShipinhaoUploader extends BasePlatformUploader {
     try {
       this.page = await this.context.newPage();
 
-      // 导航
+      // 导航（domcontentloaded 更快更稳定，不依赖 networkidle）
       this.log('🧭 前往视频号发布页...');
       await this.page.goto(this.UPLOAD_URL, {
-        waitUntil: 'networkidle', timeout: 120000
+        waitUntil: 'domcontentloaded', timeout: 120000
       });
+      await this.page.waitForTimeout(8000);
       if (this.page.url().includes('/login')) {
         throw new Error('Cookie 已过期，请重新扫码登录');
       }
+      this.log(`📍 当前 URL: ${this.page.url()}`);
       await this.page.waitForTimeout(5000);
 
       // 1. 上传视频文件
@@ -252,14 +250,22 @@ class ShipinhaoUploader extends BasePlatformUploader {
     this.filePath = this.validateVideoFile(this.filePath);
   }
 
-  /** 快速校验 Cookie 文件是否有微信 session（至少 2 个微信专属 Cookie） */
+  /** 快速校验 Cookie 文件是否有微信 session，同时检查是否过期 */
   async _quickCheckCookie() {
     try {
       const raw = JSON.parse(fs.readFileSync(this.cookiePath, 'utf-8'));
-      // 双重校验：微信专属 Cookie 名称 + 微信域 Cookie 数量
+      if (!raw.cookies || !raw.cookies.length) return false;
+
+      const now = Date.now();
+      const validCookies = raw.cookies.filter(c => {
+        // expires 为 -1 或 undefined 表示 session cookie，不过期
+        if (!c.expires || c.expires === -1) return true;
+        return c.expires * 1000 > now;
+      });
+
       const wechatKeys = ['wxuin', 'wxsid', 'wxssid', 'data_bizuin', 'mm_lang', 'uin', 'sid', 'pass_ticket'];
-      const byName = raw.cookies && raw.cookies.filter(c => c.name && wechatKeys.some(k => c.name.includes(k)));
-      const byDomain = raw.cookies && raw.cookies.filter(c => c.domain && (c.domain.includes('weixin') || c.domain.includes('wechat') || c.domain.includes('channels')));
+      const byName = validCookies.filter(c => c.name && wechatKeys.some(k => c.name.includes(k)));
+      const byDomain = validCookies.filter(c => c.domain && (c.domain.includes('weixin') || c.domain.includes('wechat') || c.domain.includes('channels')));
       return (byName && byName.length >= 1) || (byDomain && byDomain.length >= 3);
     } catch { return false; }
   }
@@ -300,7 +306,15 @@ class ShipinhaoUploader extends BasePlatformUploader {
       await this.page.waitForTimeout(1000);
     }
     if (!fi) throw new Error('未找到文件上传控件');
-    await fi.setInputFiles(this.filePath);
+
+    // 复制到临时目录，避免原路径被占用/同步/锁导致 EBADF
+    const tempDir = path.join(require('os').tmpdir(), 'yizhun-upload');
+    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+    const tempFile = path.join(tempDir, `${Date.now()}_${path.basename(this.filePath)}`);
+    fs.copyFileSync(this.filePath, tempFile);
+    this.log(`📁 已复制到临时文件: ${tempFile}`);
+
+    await fi.setInputFiles(tempFile);
     this.log('✅ 视频文件已选择');
   }
 
@@ -395,6 +409,8 @@ class ShipinhaoUploader extends BasePlatformUploader {
 
   /** 定时发布 — 对齐 social-auto-upload: 定时标签 → 日期选择器 → 时间 */
   async _setScheduleTime() {
+    const dt = new Date(this.publishDate);
+    this.log(`⏰ 准备设置定时发布: ${dt.toLocaleString('zh-CN')}`);
     try {
       const scheduleLabel = this.page.locator('label').filter({ hasText: '定时' }).nth(1);
       if (await scheduleLabel.count()) {
@@ -402,9 +418,9 @@ class ShipinhaoUploader extends BasePlatformUploader {
         await this.page.waitForTimeout(1000);
       }
 
-      const dt = new Date(this.publishDate);
       const monthStr = `${String(dt.getMonth() + 1).padStart(2, '0')}月`;
       const hourStr = String(dt.getHours()).padStart(2, '0');
+      const minuteStr = String(dt.getMinutes()).padStart(2, '0');
 
       const datePlaceholder = this.page.locator('input[placeholder*="发表时间"]').first();
       if (await datePlaceholder.count()) {
@@ -434,18 +450,35 @@ class ShipinhaoUploader extends BasePlatformUploader {
         }
       }
 
+      // 时间选择：先尝试输入，失败则从下拉/弹窗中选
       const timeInput = this.page.locator('input[placeholder*="时间"]').first();
       if (await timeInput.count()) {
         await timeInput.click();
         await this.page.waitForTimeout(300);
         await this.page.keyboard.press('Control+A');
-        await this.page.keyboard.type(hourStr);
+        await this.page.keyboard.type(`${hourStr}:${minuteStr}`);
         await this.page.keyboard.press('Enter');
         await this.page.waitForTimeout(500);
+
+        // 验证：如果时间不对，尝试从弹窗选项中选择
+        const actual = await timeInput.inputValue().catch(() => '');
+        if (!actual.includes(hourStr)) {
+          this.log('⚠️ 时间输入未生效，尝试从弹窗选项选择...');
+          // 点开展开时间选择弹窗
+          await timeInput.click();
+          await this.page.waitForTimeout(500);
+          // 尝试找对应小时选项（li/div 中含小时文本）
+          const hourOption = this.page.locator('.weui-desktop-picker__time, [role="listbox"] li, .weui-desktop-picker__panel li').filter({ hasText: new RegExp(`^${hourStr}[:\s]`) }).first();
+          if (await hourOption.count()) {
+            await hourOption.click();
+            await this.page.waitForTimeout(300);
+          }
+        }
       }
 
-      try { await this.page.locator('div.input-editor').first().click({ timeout: 5000 }); }
-      catch { await this.page.keyboard.press('Escape'); }
+      // 关闭可能还浮着的弹窗
+      try { await this.page.keyboard.press('Escape'); } catch {}
+      try { await this.page.locator('div.input-editor').first().click({ timeout: 3000 }); } catch {}
 
       this.log(`✅ 定时发布已设置: ${dt.toLocaleString('zh-CN')}`);
     } catch (e) {
