@@ -38,7 +38,7 @@ process.on('uncaughtException', (err) => {
 // ── Preview 常量 ──────────────────────────────────────────
 const BACKEND_PORT = 5680;
 const EXPECTED_CHANNEL = 'preview';
-const EXPECTED_VERSION = '4.0.5';
+const EXPECTED_VERSION = '4.0.6';
 
 let mainWindow;
 let backendProcess;
@@ -774,6 +774,36 @@ function createWindow() {
     if (!types || types.includes('doc')) filters.push({ name: '文档', extensions: ['txt', 'doc', 'docx', 'pdf'] });
     const result = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'], filters });
     return result.canceled ? null : result.filePaths[0];
+  });
+
+  // 多文件选择（资源库批量导入用）
+  ipcMain.handle('select-files', async (event, types) => {
+    const imageExts = ['jpg', 'jpeg', 'png', 'bmp', 'webp', 'gif'];
+    const videoExts = ['mp4', 'avi', 'mov', 'mkv', 'wmv', 'flv', 'm4v', 'webm'];
+    const filters = [];
+    if (!types || (types.includes('image') && types.includes('video'))) {
+      // 批量导入时同时显示图片和视频
+      filters.push({ name: '图片和视频', extensions: [...imageExts, ...videoExts] });
+    } else {
+      if (types.includes('image')) filters.push({ name: '图片', extensions: imageExts });
+      if (types.includes('video')) filters.push({ name: '视频', extensions: videoExts });
+      if (types.includes('doc')) filters.push({ name: '文档', extensions: ['txt', 'doc', 'docx', 'pdf'] });
+    }
+    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openFile', 'multiSelections'], filters });
+    return result.canceled ? [] : result.filePaths;
+  });
+
+  // 打开本地产品使用指南
+  ipcMain.handle('open-guide', async () => {
+    const guidePath = path.join(process.resourcesPath, 'guide', '壹准AI营销助手_产品使用指南.html');
+    const fallbackPath = path.join(__dirname, 'guide', '壹准AI营销助手_产品使用指南.html');
+    const target = fs.existsSync(guidePath) ? guidePath : fallbackPath;
+    if (fs.existsSync(target)) {
+      shell.openPath(target);
+      return { success: true };
+    } else {
+      return { success: false, message: '产品使用指南文件不存在' };
+    }
   });
 
   // 选择文件夹（存储目录用）

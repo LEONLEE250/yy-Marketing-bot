@@ -972,8 +972,13 @@ async function _silent_check() {
 // ============================================================
 
 function openGuide() {
-  var url = 'https://7bbf09e4ade04b45ba515b0a51e96f53.app.codebuddy.work';
-  window.open(url, '_blank');
+  if (window.electronAPI && window.electronAPI.openGuide) {
+    window.electronAPI.openGuide().then(function(r) {
+      if (!r || !r.success) toast(r && r.message ? r.message : '打开产品使用指南失败');
+    });
+  } else {
+    window.open('https://7bbf09e4ade04b45ba515b0a51e96f53.app.codebuddy.work', '_blank');
+  }
 }
 
 // ============================================================
@@ -2450,11 +2455,40 @@ function dbSelect(id) { dbState.selectedId = (dbState.selectedId === id ? null :
 
 var _dbFilePath = null;
 
-function dbShowAdd() { _dbResetForm(); document.getElementById('dbModalTitle').textContent = '新建资源'; document.getElementById('dbSaveBtn').textContent = '保存'; document.getElementById('dbModal').classList.remove('hidden'); dbTypeChange(); }
+function dbShowAdd() { _dbResetForm(); document.getElementById('dbModalTitle').textContent = '新建资源'; document.getElementById('dbSaveBtn').textContent = '保存'; document.getElementById('dbModal').classList.remove('hidden'); dbTypeChange(); dbRenderPresetTagChips([]); }
+
+/** 批量导入文件，自动以文件名作为标题 */
+async function dbBatchImport() {
+  if (!window.electronAPI || !window.electronAPI.selectFiles) {
+    toast('批量导入功能暂不可用');
+    return;
+  }
+  var files = await window.electronAPI.selectFiles(['image', 'video']);
+  if (!files || files.length === 0) return;
+  // 从当前标签输入框取标签
+  var tagStr = document.getElementById('dbTags').value;
+  var commonTags = tagStr ? tagStr.split(/[,，]/).map(function(s) { return s.trim(); }).filter(Boolean) : [];
+  var count = 0;
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    var ext = f.split('.').pop().toLowerCase();
+    var isImage = ['jpg','jpeg','png','bmp','webp','gif'].indexOf(ext) >= 0;
+    var isVideo = ['mp4','avi','mov','mkv','wmv','flv'].indexOf(ext) >= 0;
+    var type = isVideo ? 'video' : 'image';
+    var name = f.split(/[\\\/]/).pop().replace(/\.[^.]+$/, '');
+    try {
+      await window.electronAPI.dbAdd({ type: type, title: name, tags: commonTags, filePath: f, content: '' });
+      count++;
+    } catch(e) { toast('导入失败: ' + f); }
+  }
+  dbLoad();
+  toast('成功导入 ' + count + ' 个文件，标题为文件名');
+}
 
 function _dbResetForm() {
   document.getElementById('dbEditId').value = '';
   document.getElementById('dbType').value = 'text';
+  document.getElementById('dbType').removeAttribute('disabled');
   document.getElementById('dbTitle').value = '';
   document.getElementById('dbTags').value = '';
   document.getElementById('dbContent').value = '';
@@ -2470,6 +2504,66 @@ function dbTypeChange() {
 }
 
 function dbHideModal() { document.getElementById('dbModal').classList.add('hidden'); }
+
+// ── 预设标签管理 ──
+function dbGetPresetTags() {
+  try { return JSON.parse(localStorage.getItem('yizhun_db_preset_tags') || '[]'); } catch(e) { return []; }
+}
+function dbSavePresetTags(tags) {
+  localStorage.setItem('yizhun_db_preset_tags', JSON.stringify(tags));
+}
+function dbShowTagManager() {
+  document.getElementById('dbTagModal').classList.remove('hidden');
+  dbRenderTagList();
+}
+function dbHideTagManager() {
+  document.getElementById('dbTagModal').classList.add('hidden');
+}
+function dbRenderTagList() {
+  var list = document.getElementById('dbTagList');
+  var tags = dbGetPresetTags();
+  list.innerHTML = '';
+  tags.forEach(function(t) {
+    var el = document.createElement('span');
+    el.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--surface);border:1px solid var(--border);border-radius:16px;font-size:12px';
+    el.innerHTML = t + ' <span style="cursor:pointer;color:red;font-size:14px;line-height:1" onclick="dbRemoveTag(\'' + t.replace(/'/g,"\\'") + '\')">×</span>';
+    list.appendChild(el);
+  });
+}
+function dbAddTag() {
+  var inp = document.getElementById('dbNewTagName');
+  var name = inp.value.trim();
+  if (!name) return;
+  var tags = dbGetPresetTags();
+  if (tags.indexOf(name) >= 0) { toast('标签已存在'); return; }
+  tags.push(name);
+  dbSavePresetTags(tags);
+  inp.value = '';
+  dbRenderTagList();
+}
+function dbRemoveTag(name) {
+  var tags = dbGetPresetTags().filter(function(t) { return t !== name; });
+  dbSavePresetTags(tags);
+  dbRenderTagList();
+}
+/** 渲染标签下拉选择框（单选） */
+function dbRenderPresetTagChips(selectedTags) {
+  var sel = document.getElementById('dbTagSelect');
+  if (!sel) return;
+  var tags = dbGetPresetTags();
+  selectedTags = (selectedTags || [])[0] || '';
+  var html = '<option value="">选择标签</option>';
+  tags.forEach(function(t) {
+    var selected = selectedTags === t ? ' selected' : '';
+    html += '<option value="' + escapeHTML(t) + '"' + selected + '>' + escapeHTML(t) + '</option>';
+  });
+  sel.innerHTML = html;
+}
+function dbTagSelectChange() {
+  var sel = document.getElementById('dbTagSelect');
+  if (!sel) return;
+  document.getElementById('dbTags').value = sel.value;
+}
 
 async function dbPickFile() {
   if (!window.electronAPI || !window.electronAPI.selectFile) {
@@ -2499,6 +2593,13 @@ async function dbEdit(id) {
   if (!item) return;
   document.getElementById('dbEditId').value = item.id;
   document.getElementById('dbType').value = item.type;
+  // 有文件路径的资源（图片/视频）类型由文件决定，不可修改
+  var typeSelect = document.getElementById('dbType');
+  if (item.filePath && (item.type === 'image' || item.type === 'video')) {
+    typeSelect.setAttribute('disabled', 'disabled');
+  } else {
+    typeSelect.removeAttribute('disabled');
+  }
   document.getElementById('dbTitle').value = item.title || '';
   document.getElementById('dbTags').value = (item.tags||[]).join(',');
   document.getElementById('dbContent').value = item.content || '';
@@ -2508,6 +2609,7 @@ async function dbEdit(id) {
   document.getElementById('dbSaveBtn').textContent = '更新';
   document.getElementById('dbModal').classList.remove('hidden');
   dbTypeChange();
+  dbRenderPresetTagChips(item.tags || []);
   if ((item.type === 'image' || item.type === 'video') && item.filePath) {
     document.getElementById('dbPreview').style.display = '';
     if (item.type === 'image') {

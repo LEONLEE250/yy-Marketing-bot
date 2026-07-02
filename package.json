@@ -1,6 +1,6 @@
 {
   "name": "yizhun-wechat-bot",
-  "version": "4.0.5",
+  "version": "4.0.6",
   "description": "壹准AI营销助手 - 微信群发 + AI文案 + 定时发送 + 朋友圈",
   "main": "frontend/main.js",
   "scripts": {
@@ -35,6 +35,10 @@
       {
         "from": "moment_dist/moment_publisher.exe",
         "to": "moment_publisher.exe"
+      },
+      {
+        "from": "frontend/guide/",
+        "to": "guide/"
       }
     ],
     "win": {

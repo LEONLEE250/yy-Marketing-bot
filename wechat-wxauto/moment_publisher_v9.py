@@ -181,10 +181,41 @@ class MomentPublisher:
         win32gui.SetForegroundWindow(wx['hwnd'])
         time.sleep(0.3)
         
-        # 点击侧边栏朋友圈（DPI 自适应）
+        # 通过 UIA 精准查找侧边栏中的「朋友圈」按钮，避免坐标偏移误触
         r = wx['rect']
-        y_off = _sidebar_moments_offset()
-        pyautogui.click(r[0] + 30, r[1] + y_off)
+        moments_btn = None
+        try:
+            ctrl = auto.ControlFromHandle(wx['hwnd'])
+            def find_moments(c, depth=0):
+                if depth > 6:
+                    return None
+                try:
+                    n = (c.Name or '').strip()
+                    if n == '朋友圈' and c.ControlTypeName == 'ButtonControl':
+                        rect = c.BoundingRectangle
+                        if rect:
+                            return (int(rect.left + rect.width()/2),
+                                    int(rect.top + rect.height()/2))
+                    for child in c.GetChildren():
+                        res = find_moments(child, depth+1)
+                        if res:
+                            return res
+                except:
+                    pass
+                return None
+            moments_btn = find_moments(ctrl)
+        except Exception as e:
+            print(f"  UIA 检索失败: {e}")
+
+        if moments_btn:
+            cx, cy = moments_btn
+            print(f"  朋友圈按钮 (UIA): ({cx},{cy})")
+            pyautogui.click(cx, cy)
+        else:
+            # UIA 未找到，回退到 DPI 自适应坐标（实际侧边栏 y 偏移）
+            y_off = _sidebar_moments_offset()
+            print(f"  UIA 未找到，回退到坐标: x={r[0]+30}, y={r[1]+y_off}")
+            pyautogui.click(r[0] + 30, r[1] + y_off)
         time.sleep(1.5)
         
         # 验证朋友圈窗口出现

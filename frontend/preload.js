@@ -51,7 +51,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   aiSaveConfig: (data) => ipcRenderer.invoke('ai-save-config', data),
   selectReferenceImage: () => ipcRenderer.invoke('select-reference-image'),
   selectFile: (types) => ipcRenderer.invoke('select-file', types),
+  selectFiles: (types) => ipcRenderer.invoke('select-files', types),
   selectFolder: () => ipcRenderer.invoke('select-folder'),
+  openGuide: () => ipcRenderer.invoke('open-guide'),
 
   dbList: () => ipcRenderer.invoke('db-list'),
   dbGetPath: () => ipcRenderer.invoke('db-get-path'),

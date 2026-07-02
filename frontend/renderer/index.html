@@ -393,6 +393,8 @@
           <span class="pill" data-dbtype="video">🎬 视频</span>
         </div>
         <button class="btn btn-primary btn-sm" onclick="dbShowAdd()">+ 新建</button>
+        <button class="btn btn-ghost btn-sm" onclick="dbBatchImport()" title="批量导入文件，自动以文件名命名">📁 批量导入</button>
+        <button class="btn btn-ghost btn-sm" onclick="dbShowTagManager()" title="管理预设标签">🏷️ 标签</button>
         <button class="btn btn-ghost btn-sm" onclick="dbPickStorageDir()" title="选择存储目录">📁 存储目录</button>
       </div>
       <div style="font-size:11px;color:var(--text2);margin-bottom:8px" id="dbStoragePath"></div>
@@ -413,7 +415,14 @@
               <select class="input small" id="dbType" onchange="dbTypeChange()"><option value="text">📝 文案</option><option value="image">🖼 图片</option><option value="video">🎬 视频</option></select>
             </div>
             <div class="setting-row"><div><span class="setting-label">标题</span></div><input class="input small" id="dbTitle" placeholder="资源标题" /></div>
-            <div class="setting-row"><div><span class="setting-label">标签</span></div><input class="input small" id="dbTags" placeholder="逗号分隔，如 以旧换新,海报" /></div>
+            <div class="setting-row"><div><span class="setting-label">标签</span></div>
+              <div style="flex:1">
+                <select class="input small" id="dbTagSelect" onchange="dbTagSelectChange()" style="width:100%">
+                  <option value="">选择标签</option>
+                </select>
+                <input type="hidden" id="dbTags" />
+              </div>
+            </div>
             <div class="setting-row" id="dbContentRow"><div><span class="setting-label">内容</span></div><textarea class="textarea" id="dbContent" placeholder="文案内容" rows="4"></textarea></div>
             <div class="setting-row hidden" id="dbFileRow"><div><span class="setting-label">文件</span></div>
               <button class="btn btn-ghost btn-sm" onclick="dbPickFile()" id="dbFileBtn">选择文件</button>
@@ -428,6 +437,27 @@
             <button class="btn btn-ghost" onclick="dbHideModal()">取消</button>
             <button class="btn btn-primary" id="dbSaveBtn" onclick="dbSave()">保存</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 标签管理弹窗 -->
+    <div class="modal-overlay hidden" id="dbTagModal">
+      <div class="modal-card" style="max-width:450px">
+        <div class="modal-header">
+          <span>🏷️ 预设标签管理</span>
+          <button class="modal-close" onclick="dbHideTagManager()">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-sm text-gray-500 mb-3">在此处管理所有预设标签，新建资源时可直接勾选。</p>
+          <div id="dbTagList" style="display:flex;flex-wrap:wrap;gap:6px;min-height:40px;padding:8px;background:var(--surface);border-radius:8px;border:1px solid var(--border);margin-bottom:8px"></div>
+          <div style="display:flex;gap:6px">
+            <input class="input small" id="dbNewTagName" placeholder="输入新标签名称" style="flex:1" onkeydown="if(event.key==='Enter')dbAddTag()" />
+            <button class="btn btn-primary btn-sm" onclick="dbAddTag()">添加</button>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" onclick="dbHideTagManager()">完成</button>
         </div>
       </div>
     </div>
@@ -543,30 +573,12 @@
           </div>
 
           <!-- 其他设置 -->
-          <div class="card">
-            <div class="card-label">文案降级策略</div>
-            <div class="setting-row">
-              <div><span class="setting-label">无 Key 时自动用话术库</span></div>
-              <label class="toggle-switch"><input type="checkbox" id="useScripts" checked><span class="toggle-slider"></span></label>
-            </div>
-            <div class="setting-row">
-              <div><span class="setting-label">允许手动输入</span></div>
-              <label class="toggle-switch"><input type="checkbox" id="allowManual" checked><span class="toggle-slider"></span></label>
-            </div>
-          </div>
         </div>
         <div class="col">
-          <div class="card">
-            <div class="card-label">群发安全</div>
-            <div class="setting-row">
-              <div><span class="setting-label">排除名单</span></div>
-              <input class="input small" value="微信团队, 文件传输助手" id="excludeList" />
-            </div>
-          </div>
           <div class="card about-card">
             <div class="about-info">
               <div class="about-name">壹准AI营销助手</div>
-              <div class="about-version" id="aboutVersion">v4.0.5 · 2026</div>
+              <div class="about-version" id="aboutVersion">v4.0.6 · 2026</div>
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button class="btn btn-primary btn-sm" onclick="openGuide()">📖 产品使用指南</button>
