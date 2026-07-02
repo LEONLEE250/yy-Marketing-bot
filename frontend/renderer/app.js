@@ -977,7 +977,7 @@ function openGuide() {
       if (!r || !r.success) toast(r && r.message ? r.message : '打开产品使用指南失败');
     });
   } else {
-    window.open('https://7bbf09e4ade04b45ba515b0a51e96f53.app.codebuddy.work', '_blank');
+    window.open('https://b4f1062e7e69493393ae19e7a7b922dc.app.codebuddy.work', '_blank');
   }
 }
 

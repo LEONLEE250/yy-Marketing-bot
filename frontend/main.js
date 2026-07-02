@@ -38,7 +38,7 @@ process.on('uncaughtException', (err) => {
 // ── Preview 常量 ──────────────────────────────────────────
 const BACKEND_PORT = 5680;
 const EXPECTED_CHANNEL = 'preview';
-const EXPECTED_VERSION = '4.0.6';
+const EXPECTED_VERSION = '4.0.7';
 
 let mainWindow;
 let backendProcess;
@@ -793,8 +793,16 @@ function createWindow() {
     return result.canceled ? [] : result.filePaths;
   });
 
-  // 打开本地产品使用指南
+  // 打开产品使用指南（在线优先，本地离线兜底）
   ipcMain.handle('open-guide', async () => {
+    const GUIDE_URL = 'https://b4f1062e7e69493393ae19e7a7b922dc.app.codebuddy.work';
+    // 优先打开在线版（可跨电脑访问）
+    try {
+      await shell.openExternal(GUIDE_URL);
+      return { success: true };
+    } catch (_) {
+      // 在线打不开 → 用本地文件兜底
+    }
     const guidePath = path.join(process.resourcesPath, 'guide', '壹准AI营销助手_产品使用指南.html');
     const fallbackPath = path.join(__dirname, 'guide', '壹准AI营销助手_产品使用指南.html');
     const target = fs.existsSync(guidePath) ? guidePath : fallbackPath;

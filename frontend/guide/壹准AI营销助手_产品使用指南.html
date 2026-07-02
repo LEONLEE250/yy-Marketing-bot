@@ -1,354 +1,493 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>壹准AI营销助手 - 产品使用指南 v4.0</title>
-<style>
-:root {
-  --bg: #f5f5f7;
-  --surface: #fff;
-  --text: #1d1d1f;
-  --text2: #6e6e73;
-  --text3: #86868b;
-  --accent: #0071e3;
-  --accent-hover: #0077ed;
-  --border: #d2d2d7;
-  --success: #34c759;
-  --warning: #f5a623;
-  --danger: #ff3b30;
-}
-body { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Helvetica Neue', sans-serif; margin: 0; padding: 0; background: var(--bg); color: var(--text); line-height: 1.6; }
-.container { max-width: 900px; margin: 0 auto; padding: 0 24px; }
-header { background: linear-gradient(135deg, #7c6ff7 0%, #0071e3 100%); color: #fff; padding: 60px 0 50px; text-align: center; }
-header h1 { font-size: 36px; font-weight: 700; margin: 0 0 8px; letter-spacing: -0.5px; }
-header .subtitle { font-size: 16px; opacity: 0.9; margin: 0; }
-header .version { display: inline-block; background: rgba(255,255,255,0.2); border-radius: 20px; padding: 4px 16px; font-size: 13px; margin-top: 16px; }
-nav { background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
-nav ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 0; overflow-x: auto; }
-nav li { flex-shrink: 0; }
-nav a { display: block; padding: 14px 18px; text-decoration: none; color: var(--text2); font-size: 13px; font-weight: 500; border-bottom: 2px solid transparent; transition: all 0.2s; white-space: nowrap; }
-nav a:hover, nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
-main { padding: 40px 0 80px; }
-section { background: var(--surface); border-radius: 16px; padding: 32px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-section h2 { font-size: 22px; font-weight: 700; margin: 0 0 20px; color: var(--text); letter-spacing: -0.3px; }
-section h3 { font-size: 17px; font-weight: 600; margin: 24px 0 12px; color: var(--text); }
-section p { margin: 0 0 12px; color: var(--text2); font-size: 15px; }
-.steps { counter-reset: step; list-style: none; padding: 0; margin: 16px 0; }
-.steps li { counter-increment: step; position: relative; padding: 12px 0 12px 36px; font-size: 14px; color: var(--text2); border-bottom: 1px solid var(--border); }
-.steps li:last-child { border-bottom: none; }
-.steps li::before { content: counter(step); position: absolute; left: 0; top: 12px; width: 24px; height: 24px; background: var(--accent); color: #fff; border-radius: 50%; font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
-.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin: 16px 0; }
-.card-grid .card-item { background: var(--bg); border-radius: 12px; padding: 20px; text-align: center; border: 1px solid var(--border); }
-.card-grid .card-item .icon { font-size: 32px; margin-bottom: 8px; }
-.card-grid .card-item .title { font-weight: 600; font-size: 15px; margin-bottom: 4px; }
-.card-grid .card-item .desc { font-size: 13px; color: var(--text3); }
-.tip { background: #f0f7ff; border-left: 4px solid var(--accent); border-radius: 8px; padding: 12px 16px; margin: 16px 0; font-size: 14px; color: var(--text2); }
-.tip strong { color: var(--text); }
-.warn { background: #fff8e6; border-left: 4px solid var(--warning); border-radius: 8px; padding: 12px 16px; margin: 16px 0; font-size: 14px; color: var(--text2); }
-.warn strong { color: #8d6e00; }
-table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
-th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--border); }
-th { background: var(--bg); font-weight: 600; color: var(--text); }
-td { color: var(--text2); }
-.faq-item { border-bottom: 1px solid var(--border); padding: 16px 0; }
-.faq-item:last-child { border-bottom: none; }
-.faq-item .q { font-weight: 600; font-size: 15px; margin-bottom: 6px; cursor: pointer; }
-.faq-item .q::before { content: 'Q: '; color: var(--accent); font-weight: 700; }
-.faq-item .a { font-size: 14px; color: var(--text2); }
-.faq-item .a::before { content: 'A: '; color: var(--success); font-weight: 600; }
-footer { text-align: center; padding: 40px 0; font-size: 13px; color: var(--text3); }
-@media (max-width: 640px) {
-  header { padding: 40px 0 32px; }
-  header h1 { font-size: 26px; }
-  section { padding: 20px; }
-  .card-grid { grid-template-columns: 1fr; }
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>壹准AI营销助手 - 产品使用指南 v4.0</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        html { scroll-behavior: smooth; }
+        .toc-sidebar { position: sticky; top: 2rem; max-height: calc(100vh - 4rem); overflow-y: auto; }
+        .toc-sidebar a { display: block; padding: 0.3rem 0; color: #64748b; text-decoration: none; transition: 0.2s; font-size: 0.85rem; border-radius: 4px; padding-left: 6px; }
+        .toc-sidebar a:hover { color: #6366f1; background: #f5f3ff; }
+        .toc-sidebar a.active { color: #6366f1; font-weight: 600; }
+        .toc-sidebar .sub-menu { padding-left: 1rem; border-left: 2px solid #e0e7ff; margin: 0.25rem 0 0.5rem; }
+        .toc-sidebar .sub-menu a { font-size: 0.8rem; }
+        .placeholder-img { background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 0.85rem; min-height: 200px; border: 2px dashed #d1d5db; margin: 12px 0; }
+        .step-num { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background: #6366f1; color: white; border-radius: 50%; font-weight: 700; font-size: 0.8rem; flex-shrink: 0; }
+        .warn-box { background: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 12px 0; }
+        .info-box { background: #eff6ff; border-left: 4px solid #3b82f6; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 12px 0; }
+        .tip-box { background: #f0fdf4; border-left: 4px solid #22c55e; padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 12px 0; }
+        table.guide-table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+        table.guide-table th { background: #f8fafc; padding: 10px 14px; text-align: left; font-weight: 600; font-size: 0.85rem; color: #475569; border-bottom: 2px solid #e2e8f0; }
+        table.guide-table td { padding: 10px 14px; font-size: 0.85rem; border-bottom: 1px solid #f1f5f9; }
+        table.guide-table tr:hover td { background: #f8fafc; }
+    </style>
 </head>
-<body>
+<body class="bg-gray-50 text-gray-800 leading-relaxed pb-20">
 
-<header>
-  <div class="container">
-    <h1>壹准AI营销助手</h1>
-    <p class="subtitle">产品使用指南 · v4.0</p>
-    <p style="margin:10px 0 0;opacity:0.8;font-size:14px">一站式多平台营销工具：抖音 + 视频号分发、微信群发、朋友圈发布、AI 创意生成</p>
-    <div class="version">v4.0.6</div>
-  </div>
-</header>
+<div class="max-w-[1300px] mx-auto py-10 px-6 flex gap-8">
 
-<nav>
-  <div class="container">
-    <ul>
-      <li><a href="#install">安装启动</a></li>
-      <li><a href="#prepare">使用前准备</a></li>
-      <li><a href="#platform">多平台分发</a></li>
-      <li><a href="#wechat">微信助手</a></li>
-      <li><a href="#ai">AI 创意中心</a></li>
-      <li><a href="#resource">资源库</a></li>
-      <li><a href="#settings">设置</a></li>
-      <li><a href="#faq">常见问题</a></li>
-    </ul>
-  </div>
-</nav>
+    <!-- ============ 左侧导航 ============ -->
+    <aside class="w-60 hidden xl:block shrink-0">
+        <div class="toc-sidebar bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+            <h3 class="font-bold text-gray-900 mb-4 text-sm">目录</h3>
+            <a href="#intro">1. 产品简介</a>
+            <a href="#install">2. 安装与启动</a>
+            <a href="#prepare">3. 使用前准备</a>
+            <div class="sub-menu">
+                <a href="#prepare-wechat">3.1 微信客户端</a>
+                <a href="#prepare-browser">3.2 浏览器要求</a>
+                <a href="#prepare-apikey">3.3 AI 大模型配置</a>
+            </div>
+            <a href="#feature-platform">4. 多平台分发</a>
+            <div class="sub-menu">
+                <a href="#f-p-account">4.1 账号管理</a>
+                <a href="#f-p-publish">4.2 发布视频</a>
+                <a href="#f-p-risks">4.3 风险提示</a>
+            </div>
+            <a href="#feature-wechat">5. 微信助手</a>
+            <div class="sub-menu">
+                <a href="#f-w-broadcast">5.1 群发中心</a>
+                <a href="#f-w-moments">5.2 朋友圈</a>
+            </div>
+            <a href="#feature-ai">6. AI 创意中心</a>
+            <a href="#feature-resource">7. 资源库</a>
+            <a href="#feature-settings">8. 设置</a>
+            <div class="sub-menu">
+                <a href="#f-s-ai">8.1 大模型配置详解</a>
+                <a href="#f-s-models">8.2 推荐模型获取</a>
+            </div>
+            <a href="#faq">9. 常见问题</a>
+        </div>
+    </aside>
 
-<main class="container">
+    <!-- ============ 主内容 ============ -->
+    <div class="flex-1 min-w-0 space-y-12">
 
-<section id="install">
-  <h2>2. 安装与启动</h2>
-  <p>下载安装包 → 双击安装 → 桌面快捷方式启动，三步完成。</p>
-  <ol class="steps">
-    <li><strong>下载安装包</strong> — 从 GitHub Release 或官网获取 .exe 安装文件</li>
-    <li><strong>双击安装</strong> — 一路点击「下一步」完成安装</li>
-    <li><strong>启动应用</strong> — 桌面快捷方式或开始菜单启动</li>
-  </ol>
-</section>
+        <!-- ====== 1. 产品简介 ====== -->
+        <section id="intro" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-10 text-center">
+            <div class="text-6xl mb-6">🚀</div>
+            <h1 class="text-3xl font-bold text-gray-900 mb-3">壹准AI营销助手</h1>
+            <p class="text-lg text-gray-500 mb-2">产品使用指南 · v4.0</p>
+            <p class="text-sm text-gray-400 max-w-lg mx-auto">一站式多平台营销工具：抖音 + 视频号分发、微信群发、朋友圈发布、AI 创意生成</p>
+            <div class="flex justify-center gap-3 mt-6">
+                <span class="px-4 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-sm font-medium">抖音</span>
+                <span class="px-4 py-1.5 bg-indigo-50 text-indigo-600 rounded-full text-sm font-medium">视频号</span>
+                <span class="px-4 py-1.5 bg-green-50 text-green-600 rounded-full text-sm font-medium">微信</span>
+                <span class="px-4 py-1.5 bg-amber-50 text-amber-600 rounded-full text-sm font-medium">AI</span>
+            </div>
+        </section>
 
-<section id="prepare">
-  <h2>3. 使用前准备</h2>
-  <p>不同功能模块有不同依赖，提前准备好可以避免踩坑。</p>
+        <!-- ====== 2. 安装与启动 ====== -->
+        <section id="install" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+            <h2 class="text-xl font-bold text-gray-900 mb-2">2. 安装与启动</h2>
+            <p class="text-gray-500 text-sm mb-6">下载安装包 → 双击安装 → 桌面快捷方式启动，三步完成。</p>
 
-  <h3>3.1 微信客户端</h3>
-  <table>
-    <tr><th>适用功能</th><td>微信助手（群发中心 / 朋友圈）</td></tr>
-    <tr><th>要求</th><td>电脑上需安装并登录微信 PC 客户端（3.9.x 以上版本）</td></tr>
-    <tr><th>说明</th><td>多平台分发（抖音 / 视频号）<strong>不需要</strong>微信客户端</td></tr>
-  </table>
+            <div class="grid grid-cols-3 gap-4 mb-6">
+                <div class="bg-gray-50 rounded-xl p-4 text-center">
+                    <div class="step-num mx-auto mb-2">1</div>
+                    <p class="text-sm font-medium">下载安装包</p>
+                    <p class="text-xs text-gray-400 mt-1">从 GitHub Release 或联系官方人员获取安装文件</p>
+                </div>
+                <div class="bg-gray-50 rounded-xl p-4 text-center">
+                    <div class="step-num mx-auto mb-2">2</div>
+                    <p class="text-sm font-medium">双击安装</p>
+                    <p class="text-xs text-gray-400 mt-1">一路点击「下一步」完成安装</p>
+                </div>
+                <div class="bg-gray-50 rounded-xl p-4 text-center">
+                    <div class="step-num mx-auto mb-2">3</div>
+                    <p class="text-sm font-medium">启动应用</p>
+                    <p class="text-xs text-gray-400 mt-1">桌面快捷方式或开始菜单启动</p>
+                </div>
+            </div>
 
-  <h3>3.2 浏览器要求</h3>
-  <table>
-    <tr><th>适用功能</th><td>多平台分发（抖音 / 视频号）</td></tr>
-    <tr><th>要求</th><td>电脑上需安装 Chrome 或 Microsoft Edge 浏览器</td></tr>
-    <tr><th>说明</th><td>Windows 10/11 系统自带 Edge，无需额外安装</td></tr>
-  </table>
+            <div class="warn-box mb-4">
+                <strong>⚠️ 重要：安装前请关闭杀毒软件</strong>
+                <p class="text-sm mt-2">安装包和更新包可能会被 360、腾讯管家、火绒 等杀毒软件误判为病毒或风险软件。请务必在<strong>安装前关闭所有杀毒软件</strong>，安装完成后再开启。</p>
+                <p class="text-sm mt-2">后续每次更新版本时，同样需要<strong>先关闭杀毒软件</strong>再运行安装包，否则可能导致应用无法正常启动或功能异常。</p>
+            </div>
+        </section>
 
-  <h3>3.3 AI 大模型配置</h3>
-  <table>
-    <tr><th>适用功能</th><td>AI 创意中心（生文案 / 生图 / 生视频）</td></tr>
-    <tr><th>要求</th><td>需要准备大模型的 API 地址、API Key、模型名称</td></tr>
-    <tr><th>说明</th><td>首次使用需在「设置」页填写，详见第 8 节</td></tr>
-  </table>
+        <!-- ====== 3. 使用前准备 ====== -->
+        <section id="prepare" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+            <h2 class="text-xl font-bold text-gray-900 mb-2">3. 使用前准备</h2>
+            <p class="text-gray-500 text-sm mb-6">不同功能模块有不同依赖，提前准备好可以避免踩坑。</p>
 
-  <div class="tip"><strong>注意：</strong> 如果不使用 AI 创意中心功能，可以跳过此步骤。微信群发和朋友圈功能不需要大模型。</div>
-</section>
+            <h3 id="prepare-wechat" class="font-bold text-gray-800 mt-6 mb-3">3.1 微信客户端</h3>
+            <table class="guide-table">
+                <tr><th style="width:140px">适用功能</th><td>微信助手（群发中心 / 朋友圈）</td></tr>
+                <tr><th>要求</th><td>电脑上需安装并登录微信 PC 客户端（4.1.8 版本）</td></tr>
+                <tr><th>说明</th><td>多平台分发（抖音 / 视频号）不需要微信客户端</td></tr>
+            </table>
+            <img src="guide-images/wechat-version.png" alt="微信版本信息" class="rounded-xl border border-gray-200 mt-4" style="max-width:100%; height:auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
 
-<section id="platform">
-  <h2>4. 多平台分发</h2>
-  <p>支持抖音、视频号两大平台。一个视频、一份文案，同时发布到多个账号。</p>
+            <h3 id="prepare-browser" class="font-bold text-gray-800 mt-6 mb-3">3.2 浏览器要求</h3>
+            <table class="guide-table">
+                <tr><th style="width:140px">适用功能</th><td>多平台分发（抖音 / 视频号）</td></tr>
+                <tr><th>要求</th><td>电脑上需安装 Chrome 或 Microsoft Edge 浏览器</td></tr>
+                <tr><th>说明</th><td>Windows 10/11 系统自带 Edge，无需额外安装</td></tr>
+            </table>
 
-  <h3>4.1 账号管理</h3>
-  <ol class="steps">
-    <li><strong>切换平台</strong> — 顶部 Tab 选择「多平台分发」，点击「抖音」或「视频号」切换</li>
-    <li><strong>添加并登录</strong> — 点击「添加并登录」，输入账号名称 → 浏览器弹出扫码页 → 用手机扫码授权</li>
-    <li><strong>刷新状态</strong> — 点击「刷新状态」快速检查登录态，无需打开浏览器</li>
-  </ol>
+            <h3 id="prepare-apikey" class="font-bold text-gray-800 mt-6 mb-3">3.3 AI 大模型配置</h3>
+            <table class="guide-table">
+                <tr><th style="width:140px">适用功能</th><td>AI 创意中心（生文案 / 生图 / 生视频）</td></tr>
+                <tr><th>需要准备</th><td>大模型的 API 地址、API Key、模型名称</td></tr>
+                <tr><th>说明</th><td>首次使用需在「设置」页填写，详见第 8 节</td></tr>
+            </table>
+            <div class="warn-box">
+                <strong>注意：</strong>如果不使用 AI 创意中心功能，可以跳过此步骤。微信群发和朋友圈功能不需要大模型。
+            </div>
+        </section>
 
-  <h3>4.2 发布视频</h3>
-  <p>填写发布信息：</p>
-  <ul style="font-size:14px;color:var(--text2);line-height:2">
-    <li><strong>标题</strong>（必填）：最多30字，视频号会自动过滤标点符号</li>
-    <li><strong>视频文件</strong>（必填）：MP4 / MOV / AVI / MKV</li>
-    <li><strong>描述</strong>（可选）：建议不超过1000字</li>
-    <li><strong>话题标签</strong>（可选）：逗号分隔，最多10个</li>
-    <li><strong>封面图片</strong>（可选）：建议 ≥720×1280</li>
-    <li><strong>发布时间</strong>：立即发布 或 定时发布</li>
-  </ul>
-  <p>勾选目标账号 → 点击「发布」。应用会自动打开浏览器，逐个发布到勾选的账号。底部日志区可查看实时进度。</p>
+        <!-- ====== 4. 多平台分发 ====== -->
+        <section id="feature-platform" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+            <h2 class="text-xl font-bold text-gray-900 mb-2">4. 多平台分发</h2>
+            <p class="text-gray-500 text-sm mb-6">当前支持抖音、视频号两大平台。一个视频、一份文案，同时发布到多个账号。后续将根据用户需要，新增其他平台。</p>
 
-  <h3>4.3 风险提示与注意事项</h3>
+            <h3 id="f-p-account" class="font-bold text-gray-800 mt-6 mb-3">4.1 账号管理</h3>
+            <div class="flex gap-4 mb-4">
+                <div class="step-num">1</div>
+                <div class="flex-1">
+                    <p class="font-medium">切换平台</p>
+                    <p class="text-sm text-gray-500">顶部 Tab 选择「多平台分发」，点击「抖音」或「视频号」切换</p>
+                </div>
+            </div>
+            <div class="flex gap-4 mb-4">
+                <div class="step-num">2</div>
+                <div class="flex-1">
+                    <p class="font-medium">添加并登录</p>
+                    <p class="text-sm text-gray-500">点击「添加并登录」，输入账号名称 → 浏览器弹出扫码页 → 用手机扫码授权</p>
+                </div>
+            </div>
+            <div class="flex gap-4 mb-4">
+                <div class="step-num">3</div>
+                <div class="flex-1">
+                    <p class="font-medium">刷新状态</p>
+                    <p class="text-sm text-gray-500">点击「刷新状态」快速检查登录态，无需打开浏览器</p>
+                </div>
+            </div>
+            <img src="guide-images/platform-account.png" alt="多平台分发 - 账号管理" class="rounded-xl border border-gray-200 mt-4" style="max-width:100%; height:auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
 
-  <div class="warn"><strong>抖音首次登录可能需要验证码：</strong> 部分抖音账号在首次扫码后，页面会弹出滑块验证或短信验证码。这是抖音的安全机制，需要手动完成一次。后续发布不会再出现。</div>
+            <h3 id="f-p-publish" class="font-bold text-gray-800 mt-8 mb-3">4.2 发布视频</h3>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <p class="text-sm font-medium text-gray-700 mb-2">填写发布信息：</p>
+                    <ul class="text-sm text-gray-500 space-y-1 list-disc pl-4">
+                        <li><strong>标题</strong>（必填）：最多30字，视频号会自动过滤标点符号</li>
+                        <li><strong>视频文件</strong>（必填）：MP4 / MOV / AVI / MKV</li>
+                        <li><strong>描述</strong>（可选）：建议不超过1000字</li>
+                        <li><strong>话题标签</strong>（可选）：逗号分隔，最多10个</li>
+                        <li><strong>封面图片</strong>（可选）：建议 ≥720×1280</li>
+                        <li><strong>发布时间</strong>：立即发布 或 定时发布</li>
+                    </ul>
+                </div>
+                <div>
+                    <img src="guide-images/platform-publish.png" alt="多平台分发 - 发布视频" class="rounded-xl border border-gray-200" style="max-width:100%; height:auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+                </div>
+            </div>
+            <div class="flex gap-4">
+                <div class="step-num">4</div>
+                <div>
+                    <p class="font-medium">勾选目标账号 → 点击「发布」</p>
+                    <p class="text-sm text-gray-500">应用会自动打开浏览器，逐个发布到勾选的账号。底部日志区可查看实时进度。</p>
+                </div>
+            </div>
 
-  <div class="warn"><strong>发布过程中不要操作电脑：</strong> 发布时会自动打开浏览器模拟人工操作。在此期间请勿移动鼠标或切换窗口，可能干扰自动化流程。</div>
+            <h3 id="f-p-risks" class="font-bold text-gray-800 mt-8 mb-3">4.3 风险提示与注意事项</h3>
+            <div class="warn-box">
+                <strong>首次发布前建议在电脑前观察：</strong>首次使用多平台分发，建议全程在电脑前关注自动化流程。例如抖音首次发布时，页面可能会弹出滑块验证或短信验证码，这是抖音的安全机制，需要手动完成验证后才能正常发布。后续发布通常不会再出现。
+            </div>
+            <div class="warn-box">
+                <strong>发布过程中不要操作电脑：</strong>发布时会自动打开浏览器模拟人工操作。在此期间请勿移动鼠标或切换窗口，可能干扰自动化流程。
+            </div>
+            <div class="warn-box">
+                <strong>抖音定时发布限制：</strong>抖音仅支持 2 小时至 14 天后的定时发布。视频号无此限制。
+            </div>
+            <div class="info-box">
+                <strong>Cookie（会话标识）有效期：</strong>登录后应用会保存 Cookie（一种用于记录登录状态的临时数据），下次发布无需重新扫码。视频号因微信自身机制，Cookie 有效周期可能较短（数小时到数天），如发现发布时跳到扫码页，在账号管理中重新登录即可。
+            </div>
+            <div class="info-box">
+                <strong>推荐运行环境：</strong>运行多平台分发功能的电脑最好是 <strong>64位操作系统</strong>，同时预装 <strong>64位 Microsoft Edge 浏览器</strong>（Windows 10/11 自带的 Edge 通常就是 64 位）。32 位系统或 32 位浏览器可能存在兼容性问题。
+            </div>
+        </section>
 
-  <div class="tip"><strong>抖音定时发布限制：</strong> 抖音仅支持 2 小时至 14 天后的定时发布。视频号无此限制。</div>
+        <!-- ====== 5. 微信助手 ====== -->
+        <section id="feature-wechat" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+            <h2 class="text-xl font-bold text-gray-900 mb-2">5. 微信助手</h2>
+            <p class="text-gray-500 text-sm mb-6">顶部 Tab 选择「微信助手」，内部可切换「群发中心」和「朋友圈」两个板块。</p>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <img src="guide-images/wechat-broadcast.png" alt="微信助手 - 群发中心" class="rounded-xl border border-gray-200" style="max-width:100%; height:auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+                <img src="guide-images/wechat-moments.png" alt="微信助手 - 朋友圈" class="rounded-xl border border-gray-200" style="max-width:100%; height:auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+            </div>
 
-  <div class="tip"><strong>Cookie 有效期：</strong> 登录一次后 Cookie 会保存在本地，下次发布无需重新扫码。如果长时间未使用导致 Cookie 过期，只需重新扫码登录即可。</div>
-</section>
+            <h3 id="f-w-broadcast" class="font-bold text-gray-800 mt-6 mb-3">5.1 群发中心</h3>
+            <div class="info-box">
+                <strong>前置条件：</strong>电脑上需已登录微信 PC 客户端，且目标联系人在聊天列表中。
+            </div>
+            <p class="text-sm text-gray-500 mb-4">操作流程：</p>
+            <div class="space-y-3">
+                <div class="flex gap-3"><span class="step-num">1</span><span class="text-sm">上传图片 / 视频（可选）+ 填写消息文案</span></div>
+                <div class="flex gap-3"><span class="step-num">2</span><span class="text-sm">点击「加载会话列表」获取微信聊天列表，勾选收件人（一次只能展示10~15个列表，取决于微信前端实时展示的收件人）</span></div>
+                <div class="flex gap-3"><span class="step-num">3</span><span class="text-sm">选择「立即发送」或「定时发送」→ 点击发送按钮</span></div>
+            </div>
+            <div class="warn-box mt-4">
+                <strong>注意：</strong>使用群发中心和朋友圈的<strong>定时功能</strong>时，请勿将两个功能的发布时间设置重叠。两者都采用模拟鼠标操作的方式，同时运行时可能出现冲突导致发送失败。
+            </div>
+            <img src="guide-images/broadcast-detail.png" alt="群发中心 - 加载会话并发送" class="rounded-xl border border-gray-200 mt-4" style="max-width:100%; height:auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
 
-<section id="wechat">
-  <h2>5. 微信助手</h2>
-  <p>顶部 Tab 选择「微信助手」，内部可切换「群发中心」和「朋友圈」两个板块。</p>
+            <h3 id="f-w-moments" class="font-bold text-gray-800 mt-8 mb-3">5.2 朋友圈</h3>
+            <p class="text-sm text-gray-500 mb-4">操作流程：</p>
+            <div class="space-y-3">
+                <div class="flex gap-3"><span class="step-num">1</span><span class="text-sm">输入朋友圈文字内容（最多 2000 字）</span></div>
+                <div class="flex gap-3"><span class="step-num">2</span><span class="text-sm">上传图片（最多 9 张）或视频（最多 1 个）</span></div>
+                <div class="flex gap-3"><span class="step-num">3</span><span class="text-sm">选择隐私设置（公开 / 私密）和发布模式（立即 / 定时）</span></div>
+                <div class="flex gap-3"><span class="step-num">4</span><span class="text-sm">点击「发布朋友圈」</span></div>
+            </div>
+            <img src="guide-images/moments-detail.png" alt="朋友圈 - 编辑并发布" class="rounded-xl border border-gray-200 mt-4" style="max-width:100%; height:auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+            <div class="warn-box mt-4">
+                <strong>注意：</strong>朋友圈发布依赖屏幕坐标定位，不同电脑的 <strong>DPI 缩放设置</strong>可能影响定位精度。如果发布失败，请在桌面右键 →「显示设置」→「缩放与布局」中，将<strong>缩放比例调整为 100%</strong>，重启应用后再试。
+            </div>
+        </section>
 
-  <h3>5.1 群发中心</h3>
-  <div class="tip"><strong>前置条件：</strong> 电脑上需已登录微信 PC 客户端，且目标联系人在聊天列表中。</div>
-  <ol class="steps">
-    <li>上传图片 / 视频（可选）+ 填写消息文案</li>
-    <li>点击「加载会话列表」获取微信聊天列表，勾选收件人</li>
-    <li>选择「立即发送」或「定时发送」→ 点击发送按钮</li>
-  </ol>
+        <!-- ====== 6. AI 创意中心 ====== -->
+        <section id="feature-ai" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+            <h2 class="text-xl font-bold text-gray-900 mb-2">6. AI 创意中心</h2>
+            <p class="text-gray-500 text-sm mb-6">三个子功能：「AI 生文案」「AI 生图」「AI 生视频」。对话式交互，输入需求即可生成。</p>
 
-  <h3>5.2 朋友圈</h3>
-  <ol class="steps">
-    <li>输入朋友圈文字内容（最多 2000 字）</li>
-    <li>上传图片（最多 9 张）或视频（最多 1 个）</li>
-    <li>选择隐私设置（公开 / 私密）和发布模式（立即 / 定时）</li>
-    <li>点击「发布朋友圈」</li>
-  </ol>
+            <div class="grid grid-cols-3 gap-4 mb-6">
+                <div class="bg-indigo-50 rounded-xl p-4 text-center">
+                    <div class="text-2xl mb-2">💬</div>
+                    <p class="font-medium text-sm">AI 生文案</p>
+                    <p class="text-xs text-gray-500 mt-1">输入营销需求，自动生成推广文案、广告语、产品描述</p>
+                </div>
+                <div class="bg-amber-50 rounded-xl p-4 text-center">
+                    <div class="text-2xl mb-2">🎨</div>
+                    <p class="font-medium text-sm">AI 生图</p>
+                    <p class="text-xs text-gray-500 mt-1">文字描述 → 图片，支持多种尺寸比例，可选参考图</p>
+                </div>
+                <div class="bg-red-50 rounded-xl p-4 text-center">
+                    <div class="text-2xl mb-2">🎬</div>
+                    <p class="font-medium text-sm">AI 生视频</p>
+                    <p class="text-xs text-gray-500 mt-1">文字描述 → 短视频，支持文本 / 图片驱动视频生成</p>
+                </div>
+            </div>
 
-  <div class="warn"><strong>注意：</strong> 朋友圈发布依赖屏幕坐标定位，不同电脑的 DPI 缩放设置可能影响定位精度。如果发布失败，请在设置中调整相关参数。</div>
-</section>
+            <p class="text-sm font-medium text-gray-700 mt-4 mb-2">💬 AI 生文案 使用技巧与场景</p>
+            <ul class="text-sm text-gray-500 space-y-1 list-disc pl-4 mb-4">
+                <li><strong>朋友圈营销文案：</strong>输入产品名称、卖点和目标人群，快速生成多条朋友圈文案，选中满意的一条，一键填入朋友圈发布</li>
+                <li><strong>群发话术：</strong>生成特定场景下的营销话术，如节日问候、促销活动、新品通知等，一键填入群发中心</li>
+                <li><strong>多风格切换：</strong>可要求文案风格为正式、幽默、温暖、紧迫等，满足不同客户群体</li>
+            </ul>
 
-<section id="ai">
-  <h2>6. AI 创意中心</h2>
-  <p>三个子功能：「AI 生文案」「AI 生图」「AI 生视频」。对话式交互，输入需求即可生成。</p>
+            <p class="text-sm font-medium text-gray-700 mt-4 mb-2">🎨 AI 生图 使用技巧与场景</p>
+            <ul class="text-sm text-gray-500 space-y-1 list-disc pl-4 mb-4">
+                <li><strong>朋友圈配图：</strong>描述想要的画面（如"简约风格的产品展示图，白色背景"），生成后可直接下载用于朋友圈发布</li>
+                <li><strong>营销海报：</strong>生成节日促销海报、活动宣传图，支持指定横版/竖版、比例尺寸</li>
+                <li><strong>参考图上传：</strong>可以上传参考图片，让 AI 基于参考图风格生成新内容</li>
+            </ul>
 
-  <div class="card-grid">
-    <div class="card-item">
-      <div class="icon">💬</div>
-      <div class="title">AI 生文案</div>
-      <div class="desc">输入营销需求，自动生成推广文案、广告语、产品描述</div>
+            <p class="text-sm font-medium text-gray-700 mt-4 mb-2">🎬 AI 生视频（敬请期待）</p>
+            <div class="warn-box">
+                <strong>当前状态：</strong>AI 生视频模块目前还<strong>不稳定</strong>，正在优化升级中。如遇到生成失败、生成质量不佳等情况属于正常现象。我们正在全力优化，敬请期待后续版本。
+            </div>
+
+            <img src="guide-images/ai-center.png" alt="AI 创意中心 - 对话界面" class="rounded-xl border border-gray-200 mt-4" style="max-width:100%; height:auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+            <div class="info-box mt-4">
+                <strong>需要先在「设置」页配置大模型：</strong>生文案需要语言大模型，生图生视频需要对应的图像 / 视频生成模型。详见第 8 节。
+            </div>
+            <div class="warn-box mt-4">
+                <strong>重要：每次重启应用后，需前往「设置」→ 点击对应模型的「测试连接」按钮</strong>，确认显示「连接正常」后再保存设置，否则 AI 功能可能无法正常使用。
+            </div>
+        </section>
+
+        <!-- ====== 7. 资源库 ====== -->
+        <section id="feature-resource" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+            <h2 class="text-xl font-bold text-gray-900 mb-2">7. 资源库</h2>
+            <p class="text-gray-500 text-sm mb-4">统一管理文字、图片、视频素材。支持分类、搜索、一键填入群发和朋友圈。</p>
+
+            <p class="text-sm font-medium text-gray-700 mt-4 mb-2">素材管理</p>
+            <ul class="text-sm text-gray-500 space-y-1 list-disc pl-4 mb-4">
+                <li><strong>上传文案：</strong>在资源库面板中点击「新建文案」，输入标题和内容，保存后即可在群发和朋友圈中直接选用</li>
+                <li><strong>上传图片/视频：</strong>点击「上传素材」选择本地文件，支持常见格式（图片：JPG/PNG/WebP，视频：MP4/MOV/AVI）</li>
+                <li><strong>标签分类：</strong>可以为每个素材添加标签（如"春节促销"、"新品推广"、"节日问候"），通过标签快速筛选查找素材</li>
+                <li><strong>配置存储目录：</strong>在「设置」→「资源库」中可修改素材的本地存储路径，默认在 <code class="bg-gray-100 px-1 rounded">%APPDATA%\yizhun-wechat-bot-preview\resources</code></li>
+            </ul>
+
+            <p class="text-sm font-medium text-gray-700 mt-4 mb-2">在微信助手中的快捷使用</p>
+            <ul class="text-sm text-gray-500 space-y-1 list-disc pl-4 mb-4">
+                <li>在群发中心或朋友圈页面，点击右上方的「搜索」图标，即可搜索资源库中的文案、标签，找到后直接选用</li>
+                <li><strong>编辑、删除、修改标签</strong>需要在资源库 Tab 中进行：切换到「资源库」面板，点击素材旁的编辑按钮进行修改</li>
+                <li>搜索到的文案可一键填入内容输入框，图片/视频可添加到待发送素材列表</li>
+            </ul>
+
+            <img src="guide-images/resource-library.jpg" alt="资源库 - 素材管理" class="rounded-xl border border-gray-200 mt-4" style="max-width:100%; height:auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+        </section>
+
+        <!-- ====== 8. 设置 ====== -->
+        <section id="feature-settings" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+            <h2 class="text-xl font-bold text-gray-900 mb-2">8. 设置</h2>
+            <p class="text-gray-500 text-sm mb-6">配置应用参数，包括大模型 API、发送间隔、更新检测等。</p>
+
+            <h3 id="f-s-ai" class="font-bold text-gray-800 mt-6 mb-3">8.1 大模型配置详解</h3>
+            <p class="text-sm text-gray-500 mb-4">设置页有三个模型配置区域，分别对应不同 AI 功能：</p>
+            <table class="guide-table">
+                <tr><th style="width:120px">配置项</th><th>用途</th><th>填什么</th></tr>
+                <tr>
+                    <td class="font-medium">语言大模型</td>
+                    <td>AI 生文案、智能对话</td>
+                    <td class="text-sm">API 地址（OpenAI 兼容格式）+ API Key + 模型名称</td>
+                </tr>
+                <tr>
+                    <td class="font-medium">生图模型</td>
+                    <td>AI 生图</td>
+                    <td class="text-sm">API 地址 + API Key + 模型名称</td>
+                </tr>
+                <tr>
+                    <td class="font-medium">生视频模型</td>
+                    <td>AI 生视频</td>
+                    <td class="text-sm">API 地址 + API Key + 模型名称</td>
+                </tr>
+            </table>
+
+            <img src="guide-images/settings-ai.png" alt="设置 - 大模型配置" class="rounded-xl border border-gray-200 mt-4" style="max-width:100%; height:auto; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);">
+
+            <h3 id="f-s-models" class="font-bold text-gray-800 mt-8 mb-3">8.2 推荐模型获取方式</h3>
+
+            <p class="text-sm text-gray-500 mb-4">API 地址根据模型类型不同而不同。同一种服务商，语言、生图、生视频的端点通常不共用。下表中的地址为完整调用地址（包含 path）。</p>
+
+            <p class="text-sm font-medium text-gray-700 mt-4 mb-2">💬 语言大模型（用于 AI 生文案 / 智能对话）</p>
+            <table class="guide-table">
+                <tr><th style="width:100px">服务商</th><th>获取方式</th><th>API 地址（完整调用地址）</th><th>推荐模型名</th></tr>
+                <tr>
+                    <td class="font-medium">DeepSeek</td>
+                    <td class="text-sm"><a href="https://platform.deepseek.com" class="text-indigo-600">platform.deepseek.com</a> 注册，新用户赠送 500 万 tokens</td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">https://api.deepseek.com/v1/chat/completions</code></td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">deepseek-v4-Pro</code> / <code class="bg-gray-100 px-1 rounded">deepseek-v4-Flash</code></td>
+                </tr>
+                <tr>
+                    <td class="font-medium">通义千问</td>
+                    <td class="text-sm"><a href="https://dashscope.aliyun.com" class="text-indigo-600">dashscope.aliyun.com</a> 注册，百万人以下免费</td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions</code></td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">qwen-plus</code> / <code class="bg-gray-100 px-1 rounded">qwen-turbo</code></td>
+                </tr>
+                <tr>
+                    <td class="font-medium">智谱 GLM</td>
+                    <td class="text-sm"><a href="https://open.bigmodel.cn" class="text-indigo-600">open.bigmodel.cn</a> 注册，新用户赠送额度</td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">https://open.bigmodel.cn/api/paas/v4/chat/completions</code></td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">glm-4-plus</code> / <code class="bg-gray-100 px-1 rounded">glm-4-air</code></td>
+                </tr>
+                <tr>
+                    <td class="font-medium">OpenAI</td>
+                    <td class="text-sm"><a href="https://platform.openai.com" class="text-indigo-600">platform.openai.com</a>（付费）</td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">https://api.openai.com/v1/chat/completions</code></td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">gpt-4o</code> / <code class="bg-gray-100 px-1 rounded">gpt-4o-mini</code></td>
+                </tr>
+                <tr>
+                    <td class="font-medium">Anthropic</td>
+                    <td class="text-sm"><a href="https://console.anthropic.com" class="text-indigo-600">console.anthropic.com</a>（付费）</td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">https://api.anthropic.com/v1/messages</code>（非 OpenAI 格式）</td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">claude-3.5-sonnet</code></td>
+                </tr>
+            </table>
+
+            <p class="text-sm font-medium text-gray-700 mt-6 mb-2">🎨 生图大模型（用于 AI 生图）</p>
+            <table class="guide-table">
+                <tr><th style="width:100px">服务商</th><th>获取方式</th><th>API 地址（完整调用地址）</th><th>推荐模型名</th></tr>
+                <tr>
+                    <td class="font-medium">Agnes AI</td>
+                    <td class="text-sm"><a href="https://agnes.ai" class="text-indigo-600">agnes.ai</a> 注册获取 Key</td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">https://apihub.agnes-ai.com/v1/images/generations</code></td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">agnes-image-2.1-flash</code></td>
+                </tr>
+                <tr>
+                    <td class="font-medium">通义万相</td>
+                    <td class="text-sm"><a href="https://dashscope.aliyun.com" class="text-indigo-600">dashscope.aliyun.com</a> 注册，有免费额度</td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis</code>（非 OpenAI 格式）</td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">wanx2.1-image</code></td>
+                </tr>
+            </table>
+
+            <p class="text-sm font-medium text-gray-700 mt-6 mb-2">🎬 生视频大模型（用于 AI 生视频）</p>
+            <table class="guide-table">
+                <tr><th style="width:100px">服务商</th><th>获取方式</th><th>API 地址（完整调用地址）</th><th>推荐模型名</th></tr>
+                <tr>
+                    <td class="font-medium">Agnes AI</td>
+                    <td class="text-sm"><a href="https://agnes.ai" class="text-indigo-600">agnes.ai</a> 注册获取 Key</td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">https://apihub.agnes-ai.com/v1/videos</code></td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">agnes-video-v2</code></td>
+                </tr>
+                <tr>
+                    <td class="font-medium">即梦</td>
+                    <td class="text-sm"><a href="https://jimeng.jianying.com" class="text-indigo-600">jimeng.jianying.com</a> 注册，每日免费额度</td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">https://visual.volcengineapi.com/</code>（火山引擎视觉服务，非 OpenAI 格式）</td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">jimeng-video</code></td>
+                </tr>
+                <tr>
+                    <td class="font-medium">可灵</td>
+                    <td class="text-sm"><a href="https://kling.kuaishou.com" class="text-indigo-600">kling.kuaishou.com</a> 注册（付费）</td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">https://dashscope.aliyuncs.com/api/v1/services/aigc/video-generation/video-synthesis</code>（非 OpenAI 格式）</td>
+                    <td class="text-sm"><code class="bg-gray-100 px-1 rounded">kling-video</code></td>
+                </tr>
+            </table>
+
+            <p class="text-sm font-medium text-gray-700 mt-6 mb-2">🌟 免费方案：Agnes AI（语言 + 生图 + 生视频 全免）</p>
+            <div class="info-box">
+                <p class="text-sm"><strong>Agnes AI</strong> 是唯一一个<strong>同时支持语言大模型、生图、生视频</strong>，且提供 <strong>完全免费额度</strong> 的服务商。新用户注册即送免费额度，可覆盖日常使用需求。</p>
+                <p class="text-sm mt-2">注册地址：<a href="https://agnes.ai" class="text-indigo-600">agnes.ai</a> → 获取 API Key</p>
+                <p class="text-sm mt-1">
+                    语言模型：<code class="bg-gray-100 px-1 rounded">https://apihub.agnes-ai.com/v1/chat/completions</code>（模型名 <code class="bg-gray-100 px-1 rounded">agnes-chat</code>）<br>
+                    生图：<code class="bg-gray-100 px-1 rounded">https://apihub.agnes-ai.com/v1/images/generations</code>（模型名 <code class="bg-gray-100 px-1 rounded">agnes-image-2.1-flash</code>）<br>
+                    生视频：<code class="bg-gray-100 px-1 rounded">https://apihub.agnes-ai.com/v1/videos</code>（模型名 <code class="bg-gray-100 px-1 rounded">agnes-video-v2</code>）
+                </p>
+            </div>
+
+            <div class="info-box mt-4">
+                <strong>配置格式说明：</strong>API Key 从各平台后台获取，通常是一串以 <code class="bg-gray-100 px-1 rounded">sk-</code> 开头的字符串。标注「非 OpenAI 格式」的模型（通义万相、即梦、可灵）需要应用本身支持对应原生接口，当前版本优先适配 OpenAI 兼容接口；如填写后无法使用，请切换到 Agnes AI 或语言大模型方案。
+            </div>
+        </section>
+
+        <!-- ====== 9. 常见问题 ====== -->
+        <section id="faq" class="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
+            <h2 class="text-xl font-bold text-gray-900 mb-6">9. 常见问题</h2>
+
+            <div class="space-y-6">
+                <div>
+                    <p class="font-medium text-gray-800">Q: 抖音发布时弹出验证码怎么办？</p>
+                    <p class="text-sm text-gray-500 mt-1">A: 这是抖音的安全验证，首次登录时偶尔出现。手动完成一次验证即可，后续发布不会再弹。如果频繁出现，建议在手机抖音 App 中完成一次完整登录后再试。</p>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-800">Q: 视频号显示「已登录」但实际发布时跳到扫码页？</p>
+                    <p class="text-sm text-gray-500 mt-1">A: Cookie 可能已过期或不完整。在账号管理中删除该账号，重新扫码登录一次即可。</p>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-800">Q: 刷新状态时原本删除的账号又出现了？</p>
+                    <p class="text-sm text-gray-500 mt-1">A: 旧版本的已知问题，v4.0 已修复。如果仍有残留，手动删除 <code class="bg-gray-100 px-1 rounded">%APPDATA%\yizhun-wechat-bot-preview\platform-cookies\shipinhao\</code> 目录下的 JSON 文件。</p>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-800">Q: AI 生成的内容没有反应？</p>
+                    <p class="text-sm text-gray-500 mt-1">A: 检查设置页的大模型配置是否正确（API 地址、Key、模型名）。确认 API Key 未过期且有足够余额。</p>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-800">Q: 群发发送失败？</p>
+                    <p class="text-sm text-gray-500 mt-1">A: 确认微信 PC 客户端已登录且未最小化到托盘。检查目标联系人是否在聊天列表中。尝试减少发送间隔时间。</p>
+                </div>
+                <div>
+                    <p class="font-medium text-gray-800">Q: 视频号发布卡在上传页面不动？</p>
+                    <p class="text-sm text-gray-500 mt-1">A: 可能视频文件较大导致上传时间较长，耐心等待 1-2 分钟。超过 3 分钟仍未继续，请关闭弹出浏览器后重试。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 页脚 -->
+        <footer class="text-center text-gray-400 text-sm py-8 border-t border-gray-100">
+            <p>壹准AI营销助手 v4.0 · 产品使用指南</p>
+            <p class="mt-1">如有问题请联系产品团队</p>
+        </footer>
+
     </div>
-    <div class="card-item">
-      <div class="icon">🎨</div>
-      <div class="title">AI 生图</div>
-      <div class="desc">文字描述 → 图片，支持多种尺寸比例，可选参考图</div>
-    </div>
-    <div class="card-item">
-      <div class="icon">🎬</div>
-      <div class="title">AI 生视频</div>
-      <div class="desc">文字描述 → 短视频，支持文本 / 图片驱动视频生成</div>
-    </div>
-  </div>
-
-  <div class="tip"><strong>需要先在「设置」页配置大模型：</strong> 生文案需要语言大模型，生图生视频需要对应的图像 / 视频生成模型。详见第 8 节。</div>
-</section>
-
-<section id="resource">
-  <h2>7. 资源库</h2>
-  <p>统一管理文字、图片、视频素材。支持分类、搜索、标签管理、一键填入群发和朋友圈。</p>
-  <ul style="font-size:14px;color:var(--text2);line-height:2">
-    <li><strong>新建资源</strong> — 手动添加文案、图片、视频，可设置标题和标签</li>
-    <li><strong>批量导入</strong> — 一键导入文件夹中的图片和视频文件，自动以文件名命名</li>
-    <li><strong>标签管理</strong> — 创建预设标签，方便分类筛选</li>
-    <li><strong>一键使用</strong> — 在群发中心或朋友圈编辑时，点击「📦 资源库」按钮选取素材</li>
-  </ul>
-</section>
-
-<section id="settings">
-  <h2>8. 设置</h2>
-  <p>配置应用参数，包括大模型 API、发送间隔、更新检测等。</p>
-
-  <h3>8.1 大模型配置详解</h3>
-  <p>设置页有三个模型配置区域，分别对应不同 AI 功能：</p>
-  <table>
-    <tr><th>配置项</th><th>用途</th><th>填什么</th></tr>
-    <tr><td>语言大模型</td><td>AI 生文案、智能对话</td><td>API 地址（OpenAI 兼容格式）+ API Key + 模型名称</td></tr>
-    <tr><td>生图模型</td><td>AI 生图</td><td>API 地址 + API Key + 模型名称</td></tr>
-    <tr><td>生视频模型</td><td>AI 生视频</td><td>API 地址 + API Key + 模型名称</td></tr>
-  </table>
-
-  <h3>8.2 推荐模型获取方式</h3>
-  <p><strong>免费 / 低成本方案</strong></p>
-  <table>
-    <tr><th>服务商</th><th>适用</th><th>获取方式</th></tr>
-    <tr>
-      <td>DeepSeek</td>
-      <td>语言大模型</td>
-      <td>访问 <a href="https://platform.deepseek.com">platform.deepseek.com</a> 注册，新用户赠送 500 万 tokens。API 地址：<code>https://api.deepseek.com/v1</code>，模型名：<code>deepseek-chat</code></td>
-    </tr>
-    <tr>
-      <td>通义千问</td>
-      <td>语言大模型</td>
-      <td>访问 <a href="https://dashscope.aliyun.com">dashscope.aliyun.com</a> 注册阿里云账号，百万人以下免费额度</td>
-    </tr>
-    <tr>
-      <td>智谱 GLM</td>
-      <td>语言大模型</td>
-      <td>访问 <a href="https://open.bigmodel.cn">open.bigmodel.cn</a> 注册。API 地址：<code>https://open.bigmodel.cn/api/paas/v4</code></td>
-    </tr>
-    <tr>
-      <td>Agnes AI</td>
-      <td>生图 / 生视频</td>
-      <td>访问 <a href="https://agnes.ai">agnes.ai</a> 注册。生图：<code>agnes-image-2.1-flash</code>，生视频：<code>agnes-video-v2</code></td>
-    </tr>
-  </table>
-
-  <p><strong>付费专业方案</strong></p>
-  <table>
-    <tr><th>服务商</th><th>适用</th><th>获取方式</th></tr>
-    <tr><td>OpenAI</td><td>语言大模型</td><td>访问 <a href="https://platform.openai.com">platform.openai.com</a>，推荐 <code>gpt-4o</code> / <code>gpt-4o-mini</code></td></tr>
-    <tr><td>Anthropic</td><td>语言大模型</td><td>访问 <a href="https://console.anthropic.com">console.anthropic.com</a>，推荐 <code>claude-3.5-sonnet</code></td></tr>
-  </table>
-
-  <div class="tip"><strong>推荐配置方案：</strong> 语言大模型用 DeepSeek（免费额度够用很久），生图 / 生视频用 Agnes AI（注册即用，按量付费，成本低）。月成本低于 50 元。</div>
-  <div class="tip"><strong>配置格式说明：</strong> 所有模型 API 地址需兼容 OpenAI 格式（支持 <code>/v1/chat/completions</code> 端点）。API Key 从各平台后台获取，通常是一串以 <code>sk-</code> 开头的字符串。</div>
-</section>
-
-<section id="faq">
-  <h2>9. 常见问题</h2>
-
-  <div class="faq-item">
-    <div class="q">抖音发布时弹出验证码怎么办？</div>
-    <div class="a">这是抖音的安全验证，首次登录时偶尔出现。手动完成一次验证即可，后续发布不会再弹。如果频繁出现，建议在手机抖音 App 中完成一次完整登录后再试。</div>
-  </div>
-
-  <div class="faq-item">
-    <div class="q">视频号显示「已登录」但实际发布时跳到扫码页？</div>
-    <div class="a">Cookie 可能已过期或不完整。在账号管理中删除该账号，重新扫码登录一次即可。</div>
-  </div>
-
-  <div class="faq-item">
-    <div class="q">刷新状态时原本删除的账号又出现了？</div>
-    <div class="a">旧版本的已知问题，v4.0 已修复。如果仍有残留，手动删除 <code>%APPDATA%\yizhun-wechat-bot-preview\platform-cookies\shipinhao\</code> 目录下的 JSON 文件。</div>
-  </div>
-
-  <div class="faq-item">
-    <div class="q">AI 生成的内容没有反应？</div>
-    <div class="a">检查设置页的大模型配置是否正确（API 地址、Key、模型名）。确认 API Key 未过期且有足够余额。</div>
-  </div>
-
-  <div class="faq-item">
-    <div class="q">群发发送失败？</div>
-    <div class="a">确认微信 PC 客户端已登录且未最小化到托盘。检查目标联系人是否在聊天列表中。可以尝试增大发送间隔时间。</div>
-  </div>
-
-  <div class="faq-item">
-    <div class="q">视频号发布卡在上传页面不动？</div>
-    <div class="a">可能视频文件较大导致上传时间较长，耐心等待 1-2 分钟。超过 3 分钟仍未继续，请关闭弹出浏览器后重试。</div>
-  </div>
-
-  <div class="faq-item">
-    <div class="q">批量导入为什么选不了视频文件？</div>
-    <div class="a">v4.0.6 已修复此问题。如果仍有问题，请确保文件对话框的筛选器选择了「图片和视频」类型。</div>
-  </div>
-</section>
-
-</main>
-
-<footer>
-  <div class="container">
-    <p>壹准AI营销助手 &copy; 2026 · 生生广场4栋11号楼整栋</p>
-  </div>
-</footer>
-
-<script>
-// 导航高亮
-document.querySelectorAll('nav a').forEach(function(a) {
-  a.addEventListener('click', function() {
-    document.querySelectorAll('nav a').forEach(function(x) { x.classList.remove('active'); });
-    this.classList.add('active');
-  });
-});
-// 页面滚动时自动高亮当前章节
-window.addEventListener('scroll', function() {
-  var scrollY = window.scrollY + 100;
-  document.querySelectorAll('section').forEach(function(s) {
-    var id = s.getAttribute('id');
-    if (id) {
-      var navLink = document.querySelector('nav a[href="#' + id + '"]');
-      if (navLink) {
-        var top = s.offsetTop;
-        var bottom = top + s.offsetHeight;
-        if (scrollY >= top && scrollY < bottom) {
-          document.querySelectorAll('nav a').forEach(function(x) { x.classList.remove('active'); });
-          navLink.classList.add('active');
-        }
-      }
-    }
-  });
-});
-</script>
+</div>
 
 </body>
 </html>
